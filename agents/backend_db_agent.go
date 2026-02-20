@@ -11,65 +11,59 @@ import (
 
 )
 
-const backendSystemPrompt = `You are an expert Backend Development and Database Agent specializing in Go microservices.
+const backendResponsibilities = `- Implement service layer business logic for all domain operations
 
-Your responsibilities:
+- Design the database schema with proper indexing and constraints
+- Write repository pattern code for data access using pgx or sqlx
+- Handle concurrency: locking strategies, atomic updates, race conditions
+- Implement database migrations (up/down)
+- Apply domain-appropriate patterns (e.g. Saga, outbox, event sourcing)`
 
-- Implement service layer business logic for inventory operations
-- Design PostgreSQL schemas with proper indexing and constraints
-- Write repository pattern code for data access
-- Handle concurrency: optimistic locking, row-level locks, atomic stock updates
-- Implement the Saga pattern for distributed transactions with order services
-- Use sqlx or pgx for database interactions
+const backendOutputFormat = `When generating code, always include:
 
-Key concerns for inventory:
+- PostgreSQL schema (tables, indexes, constraints, foreign keys)
+- Repository interfaces and concrete implementations
+- Service structs with dependency injection
+- Concurrency-safe operations where relevant
+- Up/down migration SQL files
 
-- Preventing overselling (stock going negative) with proper locking
-- Efficient bulk stock updates
-- Audit trails for stock changes
-- Multi-warehouse support
-
-Format code blocks as:
+Format Go code blocks as:
 `+ "```go\n// file: <filename>\n<code>\n```" +`
 
-For SQL, use:
+Format SQL blocks as:
 ` + “`sql\n-- file: <filename>\n<sql>\n`”
 
-// BackendDBAgent implements service logic and database layer
+// BackendDBAgent implements service logic and database layer for any microservice
 type BackendDBAgent struct {
 *BaseAgent
 }
 
-func NewBackendDBAgent(cfg *config.Config) *BackendDBAgent {
+func NewBackendDBAgent(cfg *config.Config, svc *config.ServiceDefinition) *BackendDBAgent {
 return &BackendDBAgent{
-BaseAgent: NewBaseAgent(cfg, “Backend & Database Agent”, backendSystemPrompt),
+BaseAgent: NewBaseAgentForService(cfg, “Backend & Database Agent”, svc, backendResponsibilities, backendOutputFormat),
 }
 }
 
 func (a *BackendDBAgent) Description() string {
-return “Implements business logic, service layer, and database schema/repository for the inventory microservice”
+return “Implements business logic, service layer, and database schema/repositories”
 }
 
-func (a *BackendDBAgent) Run(ctx context.Context, task string, agentContext map[string]string) (*AgentResult, error) {
-prompt := fmt.Sprintf(`Implement the backend service layer and database code for an inventory microservice.
+func (a *BackendDBAgent) Run(ctx context.Context, svc *config.ServiceDefinition, agentContext map[string]string) (*AgentResult, error) {
+prompt := fmt.Sprintf(`Implement the backend service layer and database code for the following microservice:
 
-Task: %s
+%s
 
 Please produce:
 
-1. PostgreSQL schema (tables, indexes, constraints) for:
-- products, inventory_items, warehouses, stock_movements, reservations
-1. Repository interfaces and implementations using pgx/sqlx
-1. Service layer with business logic for:
-- Stock reservation and release
-- Atomic stock decrements (prevent negative stock)
-- Stock replenishment
-- Multi-warehouse aggregation
-1. Database migrations (up/down)
-1. Concurrency handling with SELECT FOR UPDATE or optimistic locking`, task)
+1. PostgreSQL schema for all entities listed above (tables, indexes, constraints)
+1. Repository interfaces and implementations using pgx
+1. Service layer structs with all business operations implemented
+1. Database migration files (up + down)
+1. Any concurrency or consistency mechanisms needed for the operations above
+1. Dependency injection wiring (how repos plug into services)`, svc.Prompt())
    
    if apiDesign, ok := agentContext[“api_design”]; ok {
-   prompt += “\n\nAPI Design from API Design Agent (implement these contracts):\n” + apiDesign
+   prompt += “\n\nAPI Design (implement these contracts):\n” + apiDesign
    }
    
    messages := []anthropic.MessageParam{
