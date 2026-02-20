@@ -11,82 +11,70 @@ import (
 
 )
 
-const testingSecuritySystemPrompt = `You are an expert Testing and Security Agent for Go microservices.
+const testingResponsibilities = `- Write comprehensive unit tests using Go’s testing package and testify
 
-Your responsibilities:
+- Design table-driven tests covering edge cases for all domain operations
+- Write integration tests using testcontainers-go for real dependencies
+- Implement JWT authentication middleware with role-based access control
+- Add rate limiting, request ID generation, and audit logging middleware
+- Identify and test security vulnerabilities specific to this service’s domain`
 
-- Write comprehensive unit and integration tests using Go’s testing package and testify
-- Design table-driven tests for business logic edge cases
-- Implement security middleware: JWT validation, RBAC, rate limiting
-- Write load/concurrency tests for stock operations
-- Set up test containers for PostgreSQL and Kafka integration tests
-- Identify and mitigate security vulnerabilities (SQL injection, race conditions, auth bypass)
+const testingOutputFormat = `When generating code, always include:
 
-Testing priorities for inventory:
-
-- Concurrency tests: simultaneous stock reservations
-- Boundary tests: stock going to zero, negative stock prevention
-- Integration tests: full request lifecycle with real DB
-- Event handler tests with mock Kafka
-
-Security priorities:
-
-- JWT middleware with role-based access (admin, warehouse, readonly)
-- Rate limiting per API key
-- Input sanitization and validation
-- Audit logging for all stock mutations
+- Table-driven unit tests with mock repositories (using interfaces)
+- Integration tests with testcontainers (PostgreSQL, Kafka as needed)
+- Concurrency tests for any operations that modify shared state
+- JWT middleware (RS256), RBAC roles appropriate to this service
+- Rate limiter middleware (token bucket per IP/API key)
+- Audit logging middleware for all mutating operations
+- A Makefile with test targets and coverage reporting
 
 Format code blocks as:
 ` + “`go\n// file: <filename>\n<code>\n`”
 
-// TestingSecurityAgent writes tests and implements security
+// TestingSecurityAgent writes tests and implements security for any microservice
 type TestingSecurityAgent struct {
 *BaseAgent
 }
 
-func NewTestingSecurityAgent(cfg *config.Config) *TestingSecurityAgent {
+func NewTestingSecurityAgent(cfg *config.Config, svc *config.ServiceDefinition) *TestingSecurityAgent {
 return &TestingSecurityAgent{
-BaseAgent: NewBaseAgent(cfg, “Testing & Security Agent”, testingSecuritySystemPrompt),
+BaseAgent: NewBaseAgentForService(cfg, “Testing & Security Agent”, svc, testingResponsibilities, testingOutputFormat),
 }
 }
 
 func (a *TestingSecurityAgent) Description() string {
-return “Writes unit/integration tests, implements JWT auth, RBAC, rate limiting, and security middleware”
+return “Writes unit/integration tests and implements JWT auth, RBAC, rate limiting, and security middleware”
 }
 
-func (a *TestingSecurityAgent) Run(ctx context.Context, task string, agentContext map[string]string) (*AgentResult, error) {
-prompt := fmt.Sprintf(`Write tests and implement security for an inventory microservice.
+func (a *TestingSecurityAgent) Run(ctx context.Context, svc *config.ServiceDefinition, agentContext map[string]string) (*AgentResult, error) {
+prompt := fmt.Sprintf(`Write tests and implement security for the following microservice:
 
-Task: %s
+%s
 
 Please produce:
 
-1. Unit tests for service layer (stock reservation, depletion, replenishment)
-- Table-driven tests
-- Mock repository using interfaces
-- Concurrency test: 100 goroutines reserving last item simultaneously
-1. Integration tests using testcontainers-go for PostgreSQL
-1. Security middleware:
-- JWT validation middleware (RS256)
-- Role-based access control (admin, warehouse_manager, readonly)
-- Rate limiter (token bucket per IP)
-- Request ID and audit logging middleware
+1. Unit tests for the service layer — one test file per major operation
+- Table-driven tests with success and failure cases
+- Mock repositories generated from interfaces
+- Concurrency tests for any operations that mutate shared state
+1. Integration tests using testcontainers-go
+1. Security middleware stack:
+- JWT validation (RS256) with roles appropriate to this service
+- Role-based access control per endpoint
+- Rate limiter (token bucket, configurable per role)
+- Request ID + audit logging middleware for all mutations
 1. Security-focused test cases:
-- Auth bypass attempts
-- SQL injection via product IDs
-- Race condition in stock updates
-1. Makefile targets for running tests with coverage`, task)
+- Unauthorized access attempts
+- Input validation / injection attempts
+- Any domain-specific security concerns
+1. Makefile with: test, test-integration, coverage, lint targets`, svc.Prompt())
    
-   // Provide context from other agents
-   contextSections := []string{}
    if api, ok := agentContext[“api_design”]; ok {
-   contextSections = append(contextSections, “API Design:\n”+api)
+   prompt += “\n\nAPI Design (write tests and middleware for these endpoints):\n” + api
    }
    if backend, ok := agentContext[“backend_db”]; ok {
-   contextSections = append(contextSections, “Backend/DB Layer:\n”+backend)
-   }
-   for _, section := range contextSections {
-   prompt += “\n\n” + section
+   prompt += “\n\nService/Repo Layer (mock these interfaces in tests):\n” + backend
    }
    
    messages := []anthropic.MessageParam{
@@ -101,7 +89,7 @@ Please produce:
    artifacts := ParseArtifacts(output)
    for i, art := range artifacts {
    if art.Filename == “” && art.Language == “go” {
-   artifacts[i].Filename = fmt.Sprintf(“testing_security_%d.go”, i+1)
+   artifacts[i].Filename = fmt.Sprintf(“test_%d.go”, i+1)
    }
    }
    
