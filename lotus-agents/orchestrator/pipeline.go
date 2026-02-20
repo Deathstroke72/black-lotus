@@ -9,8 +9,8 @@ import (
 “time”
 
 ```
-"inventory-agents/agents"
-"inventory-agents/config"
+"lotus-agents/agents"
+"lotus-agents/config"
 ```
 
 )
