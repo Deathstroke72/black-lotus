@@ -9,7 +9,7 @@ import (
 ```
 "github.com/anthropics/anthropic-sdk-go"
 "github.com/anthropics/anthropic-sdk-go/option"
-"inventory-agents/config"
+"lotus-agents/config"
 ```
 
 )
