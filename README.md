@@ -1,93 +1,115 @@
 # black-lotus
+# Microservice Agent Pipeline
 
-# Inventory Microservice Agent Pipeline
-
-A multi-agent system built in Go using the Claude API that autonomously designs and generates a production-ready inventory microservice for an e-commerce platform.
+A generic multi-agent system in Go using the Claude API that can design and generate any microservice from a simple `ServiceDefinition` struct. All agents automatically adapt their system prompts, code generation, and tests to whatever service you define.
 
 ## Architecture
 
 ```
-Orchestrator
-├── API Design Agent        → REST endpoints, schemas, router setup
-├── Backend & DB Agent      → Service logic, PostgreSQL schema, repositories
-├── Messaging & Events Agent → Kafka producers/consumers, domain events
-└── Testing & Security Agent → Tests, JWT auth, RBAC, rate limiting
+ServiceDefinition  ←── you define this
+       ↓
+  Orchestrator (Pipeline)
+       ↓
+  ┌────────────────────────────────────────────┐
+  │  API Design Agent     → routes, schemas    │
+  │        ↓ (output passed as context)        │
+  │  Backend & DB Agent   → service + schema   │
+  │        ↓                                   │
+  │  Messaging Agent      → Kafka events       │
+  │        ↓                                   │
+  │  Testing & Security   → tests + auth       │
+  └────────────────────────────────────────────┘
+       ↓
+  generated/<service-name>/
 ```
 
-Each agent receives the output of previous agents as context, ensuring the generated code is coherent and consistent across layers.
-
-## Prerequisites
-
-- Go 1.21+
-- An Anthropic API key
-
-## Setup
+## Quick Start
 
 ```bash
-# Install dependencies
-go mod tidy
-
-# Set your API key
 export ANTHROPIC_API_KEY=your_key_here
-
-# Run the full pipeline
+go mod tidy
 go run main.go
-
-# Run with a custom task
-go run main.go "Build an inventory service for a fashion retailer with size/color variants" ./my-output
 ```
+
+## Defining a Microservice
+
+Edit `main.go` and swap in your own `ServiceDefinition`:
+
+```go
+svc := &config.ServiceDefinition{
+    Name:        "orders",
+    Description: "Manages the full order lifecycle for an e-commerce platform",
+    Language:    "Go",
+    Entities:    []string{"Order", "OrderItem", "ShippingAddress"},
+    Operations: []string{
+        "Place an order",
+        "Cancel an order",
+        "Update order status",
+        "Track shipment",
+    },
+    Integrations: []string{
+        "Inventory Service (Kafka)",
+        "Payment Service (REST)",
+        "PostgreSQL (primary store)",
+    },
+    ExtraRequirements: []string{
+        "Idempotency on order placement",
+        "Full order history audit trail",
+    },
+}
+```
+
+Three example services are provided out of the box in `config/service_definition.go`:
+
+- `config.InventoryService()` — stock management across warehouses
+- `config.PaymentsService()` — payment processing and refunds
+- `config.NotificationsService()` — email, SMS, and push notifications
 
 ## Output Structure
 
-After running, the `generated/` directory will contain:
-
 ```
 generated/
-├── README.md                          # Pipeline summary
-├── api_design_agent/
-│   ├── output.md                      # Full agent output
-│   └── *.go                           # Router, handlers, schemas
-├── backend_and_database_agent/
-│   ├── output.md
-│   ├── *.go                           # Service layer, repositories
-│   └── *.sql                          # Migrations
-├── messaging_and_events_agent/
-│   ├── output.md
-│   └── *.go                           # Kafka producers, consumers, events
-└── testing_and_security_agent/
-    ├── output.md
-    └── *.go                           # Tests, auth middleware, rate limiter
+└── <service-name>/
+    ├── README.md
+    ├── api_design_agent/
+    │   ├── output.md        # Full agent output
+    │   └── *.go             # Router, handlers, schemas
+    ├── backend_and_database_agent/
+    │   ├── output.md
+    │   ├── *.go             # Service layer, repositories
+    │   └── *.sql            # Migrations
+    ├── messaging_and_events_agent/
+    │   ├── output.md
+    │   └── *.go             # Kafka producers, consumers, events
+    └── testing_and_security_agent/
+        ├── output.md
+        └── *.go             # Tests, JWT middleware, rate limiter
 ```
 
-## Agents
+## Adding a New Agent
 
-### 1. API Design Agent
-
-Designs the REST API contract including all endpoints, request/response structs, HTTP status codes, and router configuration using Go’s `net/http` or `chi`.
-
-### 2. Backend & Database Agent
-
-Implements the service layer and data access layer. Generates PostgreSQL schemas with proper indexing, repository implementations using `pgx`, and concurrency-safe stock operations using `SELECT FOR UPDATE`.
-
-### 3. Messaging & Events Agent
-
-Implements event-driven communication via Kafka. Produces domain events (StockReserved, StockDepleted, etc.) and consumes events from dependent services (orders, warehouse). Implements the transactional outbox pattern for reliability.
-
-### 4. Testing & Security Agent
-
-Writes table-driven unit tests, integration tests using `testcontainers-go`, concurrency tests, and implements JWT middleware with role-based access control and rate limiting.
-
-## Adding New Agents
-
-1. Create a new file in `agents/` implementing the `Agent` interface
-1. Add it to the pipeline in `orchestrator/pipeline.go`
-1. Add a context key so downstream agents can use its output
+1. Create `agents/my_agent.go` implementing the `Agent` interface:
 
 ```go
-// agents/my_new_agent.go
-type MyNewAgent struct { *BaseAgent }
+type MyAgent struct{ *BaseAgent }
 
-func (a *MyNewAgent) Run(ctx context.Context, task string, context map[string]string) (*AgentResult, error) {
-    // Call Claude with a specialized system prompt
+func NewMyAgent(cfg *config.Config, svc *config.ServiceDefinition) *MyAgent {
+    return &MyAgent{
+        BaseAgent: NewBaseAgentForService(cfg, "My Agent", svc, responsibilities, outputFormat),
+    }
+}
+
+func (a *MyAgent) Run(ctx context.Context, svc *config.ServiceDefinition, agentCtx map[string]string) (*AgentResult, error) {
+    // Build prompt using svc.Prompt() + agentCtx from prior agents
+    // Call a.Chat(ctx, messages)
+    // Return AgentResult with parsed artifacts
 }
 ```
+
+1. Register it in `orchestrator/pipeline.go`:
+
+```go
+func(svc *config.ServiceDefinition) agents.Agent { return agents.NewMyAgent(cfg, svc) },
+```
+
+1. Add a context key so downstream agents can access its output.```
