@@ -7,8 +7,8 @@ import (
 “os”
 
 ```
-"inventory-agents/config"
-"inventory-agents/orchestrator"
+"lotus-agents/config"
+"lotus-agents/orchestrator"
 ```
 
 )
