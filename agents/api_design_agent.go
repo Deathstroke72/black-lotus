@@ -11,17 +11,14 @@ import (
 
 )
 
-const apiDesignSystemPrompt = `You are an expert API Design Agent specializing in Go microservices for e-commerce inventory systems.
+const apiDesignResponsibilities = `- Design clean, RESTful API contracts tailored to this service’s domain
 
-Your responsibilities:
+- Define route structures and OpenAPI-style documentation
+- Specify request/response schemas with proper validation rules
+- Handle domain-specific edge cases and error scenarios
+- Follow REST best practices and correct HTTP semantics`
 
-- Design clean, RESTful API contracts for inventory operations
-- Define OpenAPI/Swagger specs and route structures
-- Specify request/response schemas with proper validation
-- Handle edge cases: concurrent stock updates, reservations, partial fulfillment
-- Follow REST best practices and HTTP semantics
-
-When generating code, always include:
+const apiDesignOutputFormat = `When generating code, always include:
 
 - Route definitions using Go’s net/http or chi router
 - Request/Response structs with JSON tags and validation
@@ -31,64 +28,58 @@ When generating code, always include:
 Format code blocks as:
 ` + “`go\n// file: <filename>\n<code>\n`”
 
-// APIDesignAgent designs REST API contracts for the inventory service
+// APIDesignAgent designs REST API contracts for any microservice
 type APIDesignAgent struct {
 *BaseAgent
 }
 
-func NewAPIDesignAgent(cfg *config.Config) *APIDesignAgent {
+func NewAPIDesignAgent(cfg *config.Config, svc *config.ServiceDefinition) *APIDesignAgent {
 return &APIDesignAgent{
-BaseAgent: NewBaseAgent(cfg, “API Design Agent”, apiDesignSystemPrompt),
+BaseAgent: NewBaseAgentForService(cfg, “API Design Agent”, svc, apiDesignResponsibilities, apiDesignOutputFormat),
 }
 }
 
 func (a *APIDesignAgent) Description() string {
-return “Designs RESTful API contracts, route definitions, and request/response schemas for the inventory microservice”
+return “Designs RESTful API contracts, route definitions, and request/response schemas”
 }
 
-func (a *APIDesignAgent) Run(ctx context.Context, task string, agentContext map[string]string) (*AgentResult, error) {
-prompt := fmt.Sprintf(`Design the REST API for an inventory microservice with the following requirements:
+func (a *APIDesignAgent) Run(ctx context.Context, svc *config.ServiceDefinition, agentContext map[string]string) (*AgentResult, error) {
+prompt := fmt.Sprintf(`Design the REST API for the following microservice:
 
-Task: %s
+%s
 
 Please produce:
 
-1. A complete list of API endpoints with HTTP methods, paths, and descriptions
-1. Go structs for all request and response payloads
-1. Router setup code using chi or net/http
-1. Error response format
-1. OpenAPI-style comments for each endpoint
-
-Focus on: stock management, product lookup, reservations, warehouse operations, and low-stock alerts.`, task)
-
-```
-if projectContext, ok := agentContext["project_context"]; ok {
-	prompt += "\n\nProject Context:\n" + projectContext
-}
-
-messages := []anthropic.MessageParam{
-	anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-}
-
-output, err := a.Chat(ctx, messages)
-if err != nil {
-	return nil, fmt.Errorf("[%s] failed: %w", a.Name(), err)
-}
-
-artifacts := ParseArtifacts(output)
-
-// Auto-assign filenames to artifacts that don't have them
-for i, art := range artifacts {
-	if art.Filename == "" && art.Language == "go" {
-		artifacts[i].Filename = fmt.Sprintf("api_design_%d.go", i+1)
-	}
-}
-
-return &AgentResult{
-	AgentName: a.Name(),
-	Output:    output,
-	Artifacts: artifacts,
-}, nil
-```
-
-}
+1. A complete list of API endpoints (HTTP method, path, description) for all operations listed above
+1. Go structs for all request and response payloads with JSON tags
+1. Router setup code (chi or net/http)
+1. Standardized error response format
+1. OpenAPI-style godoc comments for each endpoint
+1. Any domain-specific validation rules or constraints`, svc.Prompt())
+   
+   if ctx, ok := agentContext[“project_context”]; ok {
+   prompt += “\n\nAdditional Context:\n” + ctx
+   }
+   
+   messages := []anthropic.MessageParam{
+   anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+   }
+   
+   output, err := a.Chat(ctx, messages)
+   if err != nil {
+   return nil, fmt.Errorf(”[%s] failed: %w”, a.Name(), err)
+   }
+   
+   artifacts := ParseArtifacts(output)
+   for i, art := range artifacts {
+   if art.Filename == “” && art.Language == “go” {
+   artifacts[i].Filename = fmt.Sprintf(“api_%d.go”, i+1)
+   }
+   }
+   
+   return &AgentResult{
+   AgentName: a.Name(),
+   Output:    output,
+   Artifacts: artifacts,
+   }, nil
+   }
