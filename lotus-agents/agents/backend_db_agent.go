@@ -6,7 +6,7 @@ import (
 
 ```
 "github.com/anthropics/anthropic-sdk-go"
-"inventory-agents/config"
+"lotus-agents/config"
 ```
 
 )
