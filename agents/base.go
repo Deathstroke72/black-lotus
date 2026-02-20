@@ -33,15 +33,27 @@ Language string
 type Agent interface {
 Name() string
 Description() string
-Run(ctx context.Context, task string, context map[string]string) (*AgentResult, error)
+Run(ctx context.Context, svc *config.ServiceDefinition, agentContext map[string]string) (*AgentResult, error)
 }
 
 // BaseAgent provides shared Claude API functionality
 type BaseAgent struct {
-client    *anthropic.Client
-cfg       *config.Config
-agentName string
+client       *anthropic.Client
+cfg          *config.Config
+agentName    string
 systemPrompt string
+}
+
+// buildSystemPrompt creates a dynamic system prompt incorporating the service definition
+func buildSystemPrompt(role, svcName, language, responsibilities, outputFormat string) string {
+return fmt.Sprintf(`You are an expert %s specializing in %s microservices written in %s.
+
+Service you are building: %s
+
+Your responsibilities:
+%s
+
+%s`, role, svcName, language, svcName, responsibilities, outputFormat)
 }
 
 func NewBaseAgent(cfg *config.Config, name, systemPrompt string) *BaseAgent {
@@ -54,7 +66,20 @@ systemPrompt: systemPrompt,
 }
 }
 
+func NewBaseAgentForService(cfg *config.Config, name string, svc *config.ServiceDefinition, responsibilities, outputFormat string) *BaseAgent {
+role := name
+prompt := buildSystemPrompt(role, svc.Name, svc.Language, responsibilities, outputFormat)
+return NewBaseAgent(cfg, name, prompt)
+}
+
 func (b *BaseAgent) Name() string { return b.agentName }
+
+// WithSystemPrompt returns a copy of the base agent with an updated system prompt
+func (b *BaseAgent) WithSystemPrompt(prompt string) *BaseAgent {
+clone := *b
+clone.systemPrompt = prompt
+return &clone
+}
 
 // Chat sends a message to Claude and returns the response text
 func (b *BaseAgent) Chat(ctx context.Context, messages []anthropic.MessageParam) (string, error) {
