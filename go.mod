@@ -1,11 +1,8 @@
-module lotus-agents
+module github.com/Deathstroke72/black-lotus
 
 go 1.24.4
 
-require (
-	github.com/Deathstroke72/black-lotus v0.0.0-20260222035732-988d2ffbbd57
-	github.com/anthropics/anthropic-sdk-go v1.26.0
-)
+require github.com/anthropics/anthropic-sdk-go v1.26.0
 
 require (
 	github.com/tidwall/gjson v1.18.0 // indirect

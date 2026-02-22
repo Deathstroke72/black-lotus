@@ -1,5 +1,3 @@
-github.com/Deathstroke72/black-lotus v0.0.0-20260222035732-988d2ffbbd57 h1:Q7xasohyQukDy7r8rYxqs5OQcDzR/VuCMwWQP9xnXtg=
-github.com/Deathstroke72/black-lotus v0.0.0-20260222035732-988d2ffbbd57/go.mod h1:FXjXKeAoQaaV9zmGEtYunn6r0P2gXbny9JxsvcblvTw=
 github.com/anthropics/anthropic-sdk-go v1.26.0 h1:oUTzFaUpAevfuELAP1sjL6CQJ9HHAfT7CoSYSac11PY=
 github.com/anthropics/anthropic-sdk-go v1.26.0/go.mod h1:qUKmaW+uuPB64iy1l+4kOSvaLqPXnHTTBKH6RVZ7q5Q=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=

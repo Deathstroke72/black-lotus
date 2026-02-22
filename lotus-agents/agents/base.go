@@ -36,7 +36,7 @@ type Agent interface {
 
 // BaseAgent provides shared Claude API functionality
 type BaseAgent struct {
-	client       *anthropic.Client
+	client       anthropic.Client
 	cfg          *config.Config
 	agentName    string
 	systemPrompt string
