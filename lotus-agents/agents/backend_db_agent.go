@@ -1,14 +1,11 @@
 package agents
 
 import (
-“context”
-“fmt”
+"context"
+"fmt"
 
-```
 "github.com/anthropics/anthropic-sdk-go"
 "lotus-agents/config"
-```
-
 )
 
 const backendResponsibilities = `- Implement service layer business logic for all domain operations
