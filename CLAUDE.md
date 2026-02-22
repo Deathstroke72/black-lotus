@@ -13,6 +13,8 @@ black-lotus/
 ├── .gitignore                              # Go-specific ignore rules
 ├── README.md                               # Project description and quick-start
 ├── CLAUDE.md                               # This file
+├── go.mod                                  # Module definition (github.com/Deathstroke72/black-lotus)
+├── go.sum                                  # Dependency checksums
 ├── main.go                                 # Entry point; wires config → pipeline → artifacts
 └── lotus-agents/
     ├── agents/
@@ -22,27 +24,37 @@ black-lotus/
     │   ├── messaging_agent.go              # Kafka producers/consumers + outbox pattern
     │   └── testing_security_agent.go       # Tests, JWT middleware, RBAC, rate limiting
     ├── config/
+    │   ├── config.go                       # Config struct, Load(), environment variable handling
     │   └── service_definition.go           # ServiceDefinition struct + 3 built-in examples
     └── orchestrator/
         └── pipeline.go                     # Pipeline: runs agents sequentially, saves artifacts
 ```
 
-> No `go.mod` is present yet. The module name used in all import paths is `lotus-agents`.
-> Run `go mod init lotus-agents && go mod tidy` to initialize before building.
-
 ## Language & Toolchain
 
 - **Language**: Go
-- **Module name**: `lotus-agents` (confirmed from all import paths; no `go.mod` yet)
-- **Minimum Go version**: not yet specified — update once `go.mod` is present
-- **External dependency**: `github.com/anthropics/anthropic-sdk-go`
+- **Module name**: `github.com/Deathstroke72/black-lotus`
+- **Go version**: 1.24.4 (declared in `go.mod`)
 - **Build tool**: standard `go` toolchain
 
-### Initializing the module (first-time setup)
+### Dependencies
+
+**Direct:**
+- `github.com/anthropics/anthropic-sdk-go v1.26.0`
+
+**Indirect (transitive):**
+- `github.com/tidwall/gjson v1.18.0`
+- `github.com/tidwall/match v1.1.1`
+- `github.com/tidwall/pretty v1.2.1`
+- `github.com/tidwall/sjson v1.2.5`
+- `golang.org/x/sync v0.16.0`
+
+### First-time setup
+
+The module is already initialized. To download dependencies:
 
 ```bash
-go mod init lotus-agents
-go mod tidy          # downloads anthropic-sdk-go and its transitive deps
+go mod tidy
 ```
 
 ## Core Concepts
@@ -65,17 +77,17 @@ The single input to the pipeline. Fields:
 
 Three built-in examples: `config.InventoryService()`, `config.PaymentsService()`, `config.NotificationsService()`.
 
-### Config (`lotus-agents/config/`)
+### Config (`lotus-agents/config/config.go`)
 
-`config.Load()` reads configuration from environment variables and returns a `*config.Config`. The `Config` struct has at minimum these fields (used by `BaseAgent`):
+`config.Load()` reads configuration from environment variables and returns a `*config.Config`:
 
-| Field             | Source              | Notes                                               |
-|-------------------|---------------------|-----------------------------------------------------|
-| `AnthropicAPIKey` | `ANTHROPIC_API_KEY` | Required — `main.go` calls `log.Fatal` if absent    |
-| `Model`           | env / default       | Passed to `anthropic.Model(cfg.Model)`              |
-| `MaxTokens`       | env / default       | Passed as `int64(cfg.MaxTokens)` to the Claude API  |
+| Field             | Env var             | Default              | Notes                                             |
+|-------------------|---------------------|----------------------|---------------------------------------------------|
+| `AnthropicAPIKey` | `ANTHROPIC_API_KEY` | —                    | Required — `main.go` calls `log.Fatal` if absent  |
+| `Model`           | `CLAUDE_MODEL`      | `"claude-opus-4-5"`  | Passed to `anthropic.Model(cfg.Model)`            |
+| `MaxTokens`       | `CLAUDE_MAX_TOKENS` | `8192`               | Must be a positive integer; invalid values ignored |
 
-> `config.Load()` is called in `main.go` but its implementation is not in any visible source file — see Known Unknowns.
+`CLAUDE_MAX_TOKENS` is parsed with `strconv.Atoi`; if the value is not a positive integer the default of `8192` is used silently.
 
 ### Agent Interface (`lotus-agents/agents/base.go`)
 
@@ -110,7 +122,7 @@ Each agent's output is trimmed to ≤3000 characters before being stored in `age
 
 `BaseAgent` provides shared Claude API functionality:
 
-- `NewBaseAgent(cfg, name, systemPrompt)` — base constructor; creates an `anthropic.Client`
+- `NewBaseAgent(cfg, name, systemPrompt)` — base constructor; creates an `anthropic.Client` with `option.WithAPIKey`
 - `NewBaseAgentForService(cfg, name, svc, responsibilities, outputFormat)` — builds a tailored system prompt via `buildSystemPrompt` and calls `NewBaseAgent`
 - `(b *BaseAgent) Name() string` — returns the agent name
 - `(b *BaseAgent) Chat(ctx, messages)` — calls `Messages.New` with the agent's system prompt; concatenates all `"text"` content blocks from the response
@@ -186,8 +198,10 @@ Examples:
 
 ```bash
 export ANTHROPIC_API_KEY=your_key_here
-go mod init lotus-agents   # only needed once, if go.mod is absent
-go mod tidy
+# Optional overrides:
+# export CLAUDE_MODEL=claude-opus-4-5       # default
+# export CLAUDE_MAX_TOKENS=8192             # default
+go mod tidy    # only needed if dependencies are missing
 ```
 
 ### Running
@@ -269,7 +283,7 @@ import (
     "fmt"
 
     "github.com/anthropics/anthropic-sdk-go"
-    "lotus-agents/config"
+    "github.com/Deathstroke72/black-lotus/lotus-agents/config"
 )
 
 const myAgentResponsibilities = `- ...`
@@ -338,15 +352,13 @@ Follow standard Go idioms:
 
 - **Read before editing**: always read a file in full before making changes.
 - **Minimal diffs**: only change what is necessary; do not reformat unrelated code.
-- **Module name**: the confirmed module name is `lotus-agents` (from all import paths). Do not create `go.mod` unless the user explicitly requests it.
+- **Module name**: the module is `github.com/Deathstroke72/black-lotus`. All internal imports must use this prefix (e.g. `github.com/Deathstroke72/black-lotus/lotus-agents/config`).
 - **Update this file**: whenever significant new packages, tools, or workflows are introduced, update `CLAUDE.md` to keep it accurate.
 - **Commit discipline**: commit logical units of work with clear messages; do not bundle unrelated changes.
 - **No secrets in code**: never commit API keys, passwords, or credentials. Use environment variables.
 
 ## Known Unknowns (to fill in as the project matures)
 
-- [ ] `go.mod` / minimum Go version (module name confirmed as `lotus-agents` from all import paths)
-- [ ] `config.Load()` implementation — the function is called in `main.go` but its source is not present in any visible file. Known fields on the returned `*config.Config`: `AnthropicAPIKey` (string), `Model` (string), `MaxTokens` (int). Which env vars control `Model` and `MaxTokens`? What are the defaults?
 - [ ] CI/CD pipeline (GitHub Actions workflows, etc.)
 - [ ] Linter configuration (`golangci-lint`, `.golangci.yml`)
 - [ ] Deployment target (binary, Docker image, cloud function, etc.)
