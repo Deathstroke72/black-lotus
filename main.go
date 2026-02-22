@@ -16,7 +16,7 @@ import (
 func main() {
 cfg := config.Load()
 
-```
+
 if cfg.AnthropicAPIKey == "" {
 	log.Fatal("ANTHROPIC_API_KEY environment variable is required")
 }
@@ -74,6 +74,6 @@ for _, r := range result.Results {
 }
 
 fmt.Printf("\n✨ Done! See %s/%s/README.md for a summary.\n", outputDir, svc.Name)
-```
+
 
 }
