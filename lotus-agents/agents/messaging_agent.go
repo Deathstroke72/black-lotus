@@ -1,14 +1,11 @@
 package agents
 
 import (
-“context”
-“fmt”
+"context"
+"fmt"
 
-```
 "github.com/anthropics/anthropic-sdk-go"
 "lotus-agents/config"
-```
-
 )
 
 const messagingResponsibilities = `- Design domain event schemas appropriate for this service
