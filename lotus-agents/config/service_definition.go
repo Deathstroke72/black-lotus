@@ -10,7 +10,7 @@ type ServiceDefinition struct {
 // Name is the short name of the microservice, e.g. “inventory”, “payments”, “notifications”
 Name string
 
-```
+
 // Description is a plain-English summary of what the service does
 Description string
 
@@ -29,7 +29,7 @@ Integrations []string
 
 // ExtraRequirements are any freeform additional requirements
 ExtraRequirements []string
-```
+
 
 }
 
@@ -40,7 +40,7 @@ p := fmt.Sprintf(“Microservice Name: %s\n\n”, s.Name)
 p += fmt.Sprintf(“Description:\n%s\n\n”, s.Description)
 p += fmt.Sprintf(“Language: %s\n\n”, s.Language)
 
-```
+
 if len(s.Entities) > 0 {
 	p += "Core Domain Entities:\n"
 	for _, e := range s.Entities {
@@ -74,7 +74,7 @@ if len(s.ExtraRequirements) > 0 {
 }
 
 return p
-```
+
 
 }
 
