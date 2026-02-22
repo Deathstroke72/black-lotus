@@ -1,12 +1,12 @@
 package agents
 
 import (
-"context"
-"fmt"
+	"context"
+	"fmt"
 
+	"github.com/Deathstroke72/black-lotus/lotus-agents/config"
 
-"github.com/anthropics/anthropic-sdk-go"
-"lotus-agents/config"
+	"github.com/anthropics/anthropic-sdk-go"
 )
 
 const testingResponsibilities = `- Write comprehensive unit tests using Go’s testing package and testify
@@ -28,25 +28,25 @@ const testingOutputFormat = `When generating code, always include:
 - A Makefile with test targets and coverage reporting
 
 Format code blocks as:
-` + “`go\n// file: <filename>\n<code>\n`”
+` + "`go\n// file: <filename>\n<code>\n`"
 
 // TestingSecurityAgent writes tests and implements security for any microservice
 type TestingSecurityAgent struct {
-*BaseAgent
+	*BaseAgent
 }
 
 func NewTestingSecurityAgent(cfg *config.Config, svc *config.ServiceDefinition) *TestingSecurityAgent {
-return &TestingSecurityAgent{
-BaseAgent: NewBaseAgentForService(cfg, “Testing & Security Agent”, svc, testingResponsibilities, testingOutputFormat),
-}
+	return &TestingSecurityAgent{
+		BaseAgent: NewBaseAgentForService(cfg, "Testing & Security Agent", svc, testingResponsibilities, testingOutputFormat),
+	}
 }
 
 func (a *TestingSecurityAgent) Description() string {
-return “Writes unit/integration tests and implements JWT auth, RBAC, rate limiting, and security middleware”
+	return "Writes unit/integration tests and implements JWT auth, RBAC, rate limiting, and security middleware"
 }
 
 func (a *TestingSecurityAgent) Run(ctx context.Context, svc *config.ServiceDefinition, agentContext map[string]string) (*AgentResult, error) {
-prompt := fmt.Sprintf(`Write tests and implement security for the following microservice:
+	prompt := fmt.Sprintf(`Write tests and implement security for the following microservice:
 
 %s
 
@@ -67,33 +67,33 @@ Please produce:
 - Input validation / injection attempts
 - Any domain-specific security concerns
 1. Makefile with: test, test-integration, coverage, lint targets`, svc.Prompt())
-   
-   if api, ok := agentContext[“api_design”]; ok {
-   prompt += “\n\nAPI Design (write tests and middleware for these endpoints):\n” + api
-   }
-   if backend, ok := agentContext[“backend_db”]; ok {
-   prompt += “\n\nService/Repo Layer (mock these interfaces in tests):\n” + backend
-   }
-   
-   messages := []anthropic.MessageParam{
-   anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-   }
-   
-   output, err := a.Chat(ctx, messages)
-   if err != nil {
-   return nil, fmt.Errorf(”[%s] failed: %w”, a.Name(), err)
-   }
-   
-   artifacts := ParseArtifacts(output)
-   for i, art := range artifacts {
-   if art.Filename == “” && art.Language == “go” {
-   artifacts[i].Filename = fmt.Sprintf(“test_%d.go”, i+1)
-   }
-   }
-   
-   return &AgentResult{
-   AgentName: a.Name(),
-   Output:    output,
-   Artifacts: artifacts,
-   }, nil
-   }
+
+	if api, ok := agentContext["api_design"]; ok {
+		prompt += "\n\nAPI Design (write tests and middleware for these endpoints):\n" + api
+	}
+	if backend, ok := agentContext["backend_db"]; ok {
+		prompt += "\n\nService/Repo Layer (mock these interfaces in tests):\n" + backend
+	}
+
+	messages := []anthropic.MessageParam{
+		anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+	}
+
+	output, err := a.Chat(ctx, messages)
+	if err != nil {
+		return nil, fmt.Errorf("[%s] failed: %w", a.Name(), err)
+	}
+
+	artifacts := ParseArtifacts(output)
+	for i, art := range artifacts {
+		if art.Filename == "" && art.Language == "go" {
+			artifacts[i].Filename = fmt.Sprintf("test_%d.go", i+1)
+		}
+	}
+
+	return &AgentResult{
+		AgentName: a.Name(),
+		Output:    output,
+		Artifacts: artifacts,
+	}, nil
+}

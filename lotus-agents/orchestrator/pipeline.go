@@ -1,175 +1,170 @@
 package orchestrator
 
 import (
-"context"
-"fmt"
-"os"
-"path/filepath"
-"strings"
-"time"
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
-
-"lotus-agents/agents"
-"lotus-agents/config"
-
-
+	"github.com/Deathstroke72/black-lotus/lotus-agents/agents"
+	"github.com/Deathstroke72/black-lotus/lotus-agents/config"
 )
 
 // Pipeline coordinates all agents to build a microservice
 type Pipeline struct {
-agentFactories []func(svc *config.ServiceDefinition) agents.Agent
-cfg            *config.Config
+	agentFactories []func(svc *config.ServiceDefinition) agents.Agent
+	cfg            *config.Config
 }
 
 // PipelineResult holds all outputs from a full pipeline run
 type PipelineResult struct {
-Service   *config.ServiceDefinition
-Results   []*agents.AgentResult
-StartTime time.Time
-EndTime   time.Time
-Duration  time.Duration
+	Service   *config.ServiceDefinition
+	Results   []*agents.AgentResult
+	StartTime time.Time
+	EndTime   time.Time
+	Duration  time.Duration
 }
 
 // NewPipeline creates a reusable pipeline wired with all agents.
 // Agents are constructed lazily per service so their system prompts
 // are tailored to the service being built.
 func NewPipeline(cfg *config.Config) *Pipeline {
-return &Pipeline{
-cfg: cfg,
-agentFactories: []func(svc *config.ServiceDefinition) agents.Agent{
-func(svc *config.ServiceDefinition) agents.Agent { return agents.NewAPIDesignAgent(cfg, svc) },
-func(svc *config.ServiceDefinition) agents.Agent { return agents.NewBackendDBAgent(cfg, svc) },
-func(svc *config.ServiceDefinition) agents.Agent { return agents.NewMessagingAgent(cfg, svc) },
-func(svc *config.ServiceDefinition) agents.Agent { return agents.NewTestingSecurityAgent(cfg, svc) },
-},
-}
+	return &Pipeline{
+		cfg: cfg,
+		agentFactories: []func(svc *config.ServiceDefinition) agents.Agent{
+			func(svc *config.ServiceDefinition) agents.Agent { return agents.NewAPIDesignAgent(cfg, svc) },
+			func(svc *config.ServiceDefinition) agents.Agent { return agents.NewBackendDBAgent(cfg, svc) },
+			func(svc *config.ServiceDefinition) agents.Agent { return agents.NewMessagingAgent(cfg, svc) },
+			func(svc *config.ServiceDefinition) agents.Agent { return agents.NewTestingSecurityAgent(cfg, svc) },
+		},
+	}
 }
 
 // contextKeys maps agent index → the key used to pass its output to downstream agents
-var contextKeys = []string{“api_design”, “backend_db”, “messaging”, “testing_security”}
+var contextKeys = []string{"api_design", "backend_db", "messaging", "testing_security"}
 
 // Run executes all agents for the given service definition, chaining outputs as context
 func (p *Pipeline) Run(ctx context.Context, svc *config.ServiceDefinition) (*PipelineResult, error) {
-result := &PipelineResult{Service: svc, StartTime: time.Now()}
+	result := &PipelineResult{Service: svc, StartTime: time.Now()}
 
-
-// Seed context with the full service definition prompt
-agentContext := map[string]string{
-	"project_context": svc.Prompt(),
-}
-
-fmt.Printf("\n╔══════════════════════════════════════════════════╗\n")
-fmt.Printf("║  Building: %-38s║\n", svc.Name+" microservice")
-fmt.Printf("╚══════════════════════════════════════════════════╝\n\n")
-
-agentList := make([]agents.Agent, len(p.agentFactories))
-for i, factory := range p.agentFactories {
-	agentList[i] = factory(svc)
-}
-
-for i, agent := range agentList {
-	type describer interface{ Description() string }
-	desc := ""
-	if d, ok := agent.(describer); ok {
-		desc = d.Description()
-	}
-	fmt.Printf("▶ [%d/%d] %s\n", i+1, len(agentList), agent.Name())
-	if desc != "" {
-		fmt.Printf("  %s\n\n", desc)
+	// Seed context with the full service definition prompt
+	agentContext := map[string]string{
+		"project_context": svc.Prompt(),
 	}
 
-	agentResult, err := agent.Run(ctx, svc, agentContext)
-	if err != nil {
-		return nil, fmt.Errorf("agent %q failed: %w", agent.Name(), err)
+	fmt.Printf("\n╔══════════════════════════════════════════════════╗\n")
+	fmt.Printf("║  Building: %-38s║\n", svc.Name+" microservice")
+	fmt.Printf("╚══════════════════════════════════════════════════╝\n\n")
+
+	agentList := make([]agents.Agent, len(p.agentFactories))
+	for i, factory := range p.agentFactories {
+		agentList[i] = factory(svc)
 	}
 
-	// Pass a trimmed summary to downstream agents
-	if i < len(contextKeys) {
-		summary := agentResult.Output
-		if len(summary) > 3000 {
-			summary = summary[:3000] + "\n... [truncated]"
+	for i, agent := range agentList {
+		type describer interface{ Description() string }
+		desc := ""
+		if d, ok := agent.(describer); ok {
+			desc = d.Description()
 		}
-		agentContext[contextKeys[i]] = summary
+		fmt.Printf("▶ [%d/%d] %s\n", i+1, len(agentList), agent.Name())
+		if desc != "" {
+			fmt.Printf("  %s\n\n", desc)
+		}
+
+		agentResult, err := agent.Run(ctx, svc, agentContext)
+		if err != nil {
+			return nil, fmt.Errorf("agent %q failed: %w", agent.Name(), err)
+		}
+
+		// Pass a trimmed summary to downstream agents
+		if i < len(contextKeys) {
+			summary := agentResult.Output
+			if len(summary) > 3000 {
+				summary = summary[:3000] + "\n... [truncated]"
+			}
+			agentContext[contextKeys[i]] = summary
+		}
+
+		result.Results = append(result.Results, agentResult)
+		fmt.Printf("  ✓ Complete — %d artifact(s) generated\n\n", len(agentResult.Artifacts))
 	}
 
-	result.Results = append(result.Results, agentResult)
-	fmt.Printf("  ✓ Complete — %d artifact(s) generated\n\n", len(agentResult.Artifacts))
-}
-
-result.EndTime = time.Now()
-result.Duration = result.EndTime.Sub(result.StartTime)
-return result, nil
-
+	result.EndTime = time.Now()
+	result.Duration = result.EndTime.Sub(result.StartTime)
+	return result, nil
 
 }
 
 // SaveArtifacts writes all generated files to outputDir/<service-name>/
 func SaveArtifacts(result *PipelineResult, outputDir string) error {
-serviceDir := filepath.Join(outputDir, result.Service.Name)
-if err := os.MkdirAll(serviceDir, 0755); err != nil {
-return err
-}
-
-
-summary := &strings.Builder{}
-summary.WriteString(fmt.Sprintf("# %s Microservice — Generated by Agent Pipeline\n\n", result.Service.Name))
-summary.WriteString(fmt.Sprintf("**Description:** %s\n\n", result.Service.Description))
-summary.WriteString(fmt.Sprintf("Generated: %s | Duration: %s\n\n", result.StartTime.Format(time.RFC1123), result.Duration.Round(time.Second)))
-summary.WriteString("## Generated Files\n\n")
-
-for _, agentResult := range result.Results {
-	agentDir := filepath.Join(serviceDir, sanitizeName(agentResult.AgentName))
-	if err := os.MkdirAll(agentDir, 0755); err != nil {
+	serviceDir := filepath.Join(outputDir, result.Service.Name)
+	if err := os.MkdirAll(serviceDir, 0755); err != nil {
 		return err
 	}
 
-	// Full agent output as markdown
-	mdContent := fmt.Sprintf("# %s Output\n\n%s", agentResult.AgentName, agentResult.Output)
-	if err := os.WriteFile(filepath.Join(agentDir, "output.md"), []byte(mdContent), 0644); err != nil {
-		return err
-	}
+	summary := &strings.Builder{}
+	summary.WriteString(fmt.Sprintf("# %s Microservice — Generated by Agent Pipeline\n\n", result.Service.Name))
+	summary.WriteString(fmt.Sprintf("**Description:** %s\n\n", result.Service.Description))
+	summary.WriteString(fmt.Sprintf("Generated: %s | Duration: %s\n\n", result.StartTime.Format(time.RFC1123), result.Duration.Round(time.Second)))
+	summary.WriteString("## Generated Files\n\n")
 
-	// Individual code artifacts
-	for j, artifact := range agentResult.Artifacts {
-		filename := artifact.Filename
-		if filename == "" {
-			filename = fmt.Sprintf("artifact_%d%s", j+1, extensionForLang(artifact.Language))
-		}
-		if err := os.WriteFile(filepath.Join(agentDir, filename), []byte(artifact.Content), 0644); err != nil {
+	for _, agentResult := range result.Results {
+		agentDir := filepath.Join(serviceDir, sanitizeName(agentResult.AgentName))
+		if err := os.MkdirAll(agentDir, 0755); err != nil {
 			return err
 		}
-	}
 
-	summary.WriteString(fmt.Sprintf("### %s\n", agentResult.AgentName))
-	for _, art := range agentResult.Artifacts {
-		if art.Filename != "" {
-			summary.WriteString(fmt.Sprintf("- `%s/%s` (%s)\n", sanitizeName(agentResult.AgentName), art.Filename, art.Language))
+		// Full agent output as markdown
+		mdContent := fmt.Sprintf("# %s Output\n\n%s", agentResult.AgentName, agentResult.Output)
+		if err := os.WriteFile(filepath.Join(agentDir, "output.md"), []byte(mdContent), 0644); err != nil {
+			return err
 		}
+
+		// Individual code artifacts
+		for j, artifact := range agentResult.Artifacts {
+			filename := artifact.Filename
+			if filename == "" {
+				filename = fmt.Sprintf("artifact_%d%s", j+1, extensionForLang(artifact.Language))
+			}
+			if err := os.WriteFile(filepath.Join(agentDir, filename), []byte(artifact.Content), 0644); err != nil {
+				return err
+			}
+		}
+
+		summary.WriteString(fmt.Sprintf("### %s\n", agentResult.AgentName))
+		for _, art := range agentResult.Artifacts {
+			if art.Filename != "" {
+				summary.WriteString(fmt.Sprintf("- `%s/%s` (%s)\n", sanitizeName(agentResult.AgentName), art.Filename, art.Language))
+			}
+		}
+		summary.WriteString("\n")
 	}
-	summary.WriteString("\n")
-}
 
-return os.WriteFile(filepath.Join(serviceDir, "README.md"), []byte(summary.String()), 0644)
-
+	return os.WriteFile(filepath.Join(serviceDir, "README.md"), []byte(summary.String()), 0644)
 
 }
 
 func sanitizeName(name string) string {
-r := strings.NewReplacer(” “, “*”, “&”, “and”, “/”, “*”)
-return strings.ToLower(r.Replace(name))
+	r := strings.NewReplacer(" ", "*", "&", "and", "/", "*")
+	return strings.ToLower(r.Replace(name))
 }
 
 func extensionForLang(lang string) string {
-switch lang {
-case “go”:
-return “.go”
-case “sql”:
-return “.sql”
-case “yaml”, “yml”:
-return “.yaml”
-case “json”:
-return “.json”
-default:
-return “.txt”
-}
+	ext := ".txt"
+	switch lang {
+	case "go":
+		ext = ".go"
+	case "sql":
+		ext = ".sql"
+	case "yaml", "yml":
+		ext = ".yaml"
+	case "json":
+		ext = ".json"
+	default:
+		ext = ".txt"
+	}
+	return ext
 }
