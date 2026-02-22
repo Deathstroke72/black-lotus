@@ -1,17 +1,14 @@
 package agents
 
 import (
-“context”
-“encoding/json”
-“fmt”
-“strings”
+"context"
+"encoding/json"
+"fmt"
+"strings"
 
-```
 "github.com/anthropics/anthropic-sdk-go"
 "github.com/anthropics/anthropic-sdk-go/option"
 "lotus-agents/config"
-```
-
 )
 
 // AgentResult holds the output of an agent’s work
@@ -95,7 +92,6 @@ if err != nil {
 return “”, fmt.Errorf(“claude API error: %w”, err)
 }
 
-```
 var sb strings.Builder
 for _, block := range resp.Content {
 	if block.Type == "text" {
@@ -103,7 +99,7 @@ for _, block := range resp.Content {
 	}
 }
 return sb.String(), nil
-```
+
 
 }
 
@@ -115,7 +111,6 @@ var inBlock bool
 var lang, filename string
 var blockLines []string
 
-```
 for _, line := range lines {
 	if strings.HasPrefix(line, "```") && !inBlock {
 		inBlock = true
@@ -141,8 +136,6 @@ for _, line := range lines {
 	}
 }
 return artifacts
-```
-
 }
 
 // ToJSON is a helper to pretty-print structs for context passing
