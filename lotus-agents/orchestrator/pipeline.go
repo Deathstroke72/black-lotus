@@ -129,7 +129,11 @@ func SaveArtifacts(result *PipelineResult, outputDir string) error {
 			if filename == "" {
 				filename = fmt.Sprintf("artifact_%d%s", j+1, extensionForLang(artifact.Language))
 			}
-			if err := os.WriteFile(filepath.Join(agentDir, filename), []byte(artifact.Content), 0644); err != nil {
+			fullPath := filepath.Join(agentDir, filename)
+			if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+				return err
+			}
+			if err := os.WriteFile(fullPath, []byte(artifact.Content), 0644); err != nil {
 				return err
 			}
 		}

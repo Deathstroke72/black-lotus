@@ -9,7 +9,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 )
 
-const apiDesignResponsibilities = `- Design clean, RESTful API contracts tailored to this service’s domain
+const apiDesignResponsibilities = `- Design clean, RESTful API contracts tailored to this service's domain
 
 - Define route structures and OpenAPI-style documentation
 - Specify request/response schemas with proper validation rules
