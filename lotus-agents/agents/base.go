@@ -42,16 +42,55 @@ type BaseAgent struct {
 	systemPrompt string
 }
 
+// caArchitecturePreamble is injected into every agent's system prompt to enforce
+// Clean Architecture output structure across the entire pipeline.
+const caArchitecturePreamble = `## Architecture Requirement: Clean Architecture
+
+ALL code you generate MUST conform to Clean Architecture. Project layout:
+
+  cmd/server/main.go
+  internal/domain/entity/              ← pure business objects, no external imports
+  internal/domain/repository/          ← interfaces only (not implementations)
+  internal/domain/service/             ← pure domain services
+  internal/domain/event/               ← domain event structs
+  internal/application/usecase/        ← one file per use case
+  internal/application/port/           ← input/output port interfaces
+  internal/infrastructure/postgres/repository/  ← pgx concrete implementations
+  internal/infrastructure/postgres/migration/   ← SQL migration files
+  internal/infrastructure/kafka/producer/
+  internal/infrastructure/kafka/consumer/
+  internal/interfaces/http/handler/    ← thin HTTP handlers
+  internal/interfaces/http/middleware/ ← JWT, RBAC, rate limiting, request ID
+  internal/interfaces/http/dto/        ← HTTP request/response types (NOT domain entities)
+  internal/interfaces/http/router/     ← route registration
+  Makefile
+
+Dependency Rule (strictly enforced):
+- domain      → zero external imports (no net/http, no database/sql, no kafka SDK)
+- application → imports domain only; no framework imports
+- infrastructure → implements interfaces from domain/application; imports external SDKs
+- interfaces  → imports application ports; converts DTOs <-> domain entities
+
+CRITICAL FORMATTING RULE: Every fenced code block MUST begin with:
+  // file: <relative-path>   (Go files)
+  -- file: <relative-path>   (SQL files)
+Use the full relative path so files land in the correct CA layer.
+Example: // file: internal/domain/entity/payment.go`
+
 // buildSystemPrompt creates a dynamic system prompt incorporating the service definition
 func buildSystemPrompt(role, svcName, language, responsibilities, outputFormat string) string {
-	return fmt.Sprintf(`You are an expert %s specializing in %s microservices written in %s.
+	return fmt.Sprintf(`%s
+
+---
+
+You are an expert %s specializing in %s microservices written in %s.
 
 Service you are building: %s
 
 Your responsibilities:
 %s
 
-%s`, role, svcName, language, svcName, responsibilities, outputFormat)
+%s`, caArchitecturePreamble, role, svcName, language, svcName, responsibilities, outputFormat)
 }
 
 func NewBaseAgent(cfg *config.Config, name, systemPrompt string) *BaseAgent {
@@ -125,8 +164,10 @@ func ParseArtifacts(output string) []Artifact {
 				Content:  strings.Join(blockLines, "\n"),
 			})
 		} else if inBlock {
-			// Detect filename hints like // file: main.go
-			if strings.HasPrefix(line, "// file:") || strings.HasPrefix(line, "# file:") {
+			// Detect filename hints like // file: main.go or -- file: migration.sql
+			if strings.HasPrefix(line, "// file:") ||
+				strings.HasPrefix(line, "# file:") ||
+				strings.HasPrefix(line, "-- file:") {
 				parts := strings.SplitN(line, ":", 2)
 				if len(parts) == 2 {
 					filename = strings.TrimSpace(parts[1])

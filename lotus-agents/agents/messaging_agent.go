@@ -9,24 +9,31 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 )
 
-const messagingResponsibilities = `- Design domain event schemas appropriate for this service
+const messagingResponsibilities = `- Design and implement the event-driven layer (Clean Architecture: domain/event + infrastructure/kafka)
+- domain/event: pure event structs with EventID, CorrelationID, Timestamp, Version; zero external imports
+- infrastructure/kafka/producer: outbox pattern; reads DB outbox table, publishes domain events to Kafka
+- infrastructure/kafka/consumer: consumer group setup, idempotency tracking, dead-letter queue, graceful shutdown
+- application/usecase: one event-handler use case file per consumed event type (the business reaction logic)
+- The domain/event structs are the canonical schema; infrastructure serialises/deserialises them
+- Dependency Rule: domain/event must not import any Kafka SDK, net/http, or database/sql`
 
-- Implement Kafka producers with the transactional outbox pattern
-- Implement Kafka consumers with idempotency and dead letter queue handling
-- Define which events this service publishes and which it consumes
-- Ensure at-least-once delivery with retry and backoff logic
-- Handle graceful shutdown of consumers`
+const messagingOutputFormat = `Produce these files (every code block MUST start with // file: <path>):
 
-const messagingOutputFormat = `When generating code, always include:
+  internal/domain/event/<event_name>_event.go
+      → Pure struct: EventID, CorrelationID, Timestamp, Version, payload fields; zero SDK imports
 
-- Domain event structs with versioning, event_id, correlation_id, and timestamp
-- Kafka producer with transactional outbox (events written to DB before publishing)
-- Kafka consumer group with idempotency tracking
-- Dead letter queue handling
-- Graceful shutdown
+  internal/infrastructure/kafka/producer/outbox_publisher.go
+      → Reads outbox table rows, publishes to Kafka, marks as published
 
-Format code blocks as:
-` + "`go\n// file: <filename>\n<code>\n`"
+  internal/infrastructure/kafka/consumer/<topic>_consumer.go
+      → Consumer group, idempotency key check, calls application use case per message
+
+  internal/application/usecase/handle_<event>_usecase.go
+      → Business reaction logic invoked by the consumer
+
+Format: ` + "```go\n// file: internal/<layer>/<subdir>/<filename>.go\n<code>\n```" + `
+
+Do not embed Kafka SDK types inside domain/event structs.`
 
 // MessagingAgent handles event-driven communication for any microservice
 type MessagingAgent struct {
@@ -80,7 +87,7 @@ Please produce:
 	artifacts := ParseArtifacts(output)
 	for i, art := range artifacts {
 		if art.Filename == "" && art.Language == "go" {
-			artifacts[i].Filename = fmt.Sprintf("messaging_%d.go", i+1)
+			artifacts[i].Filename = fmt.Sprintf("internal/infrastructure/kafka/producer/messaging_%d.go", i+1)
 		}
 	}
 

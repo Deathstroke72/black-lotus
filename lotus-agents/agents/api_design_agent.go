@@ -9,22 +9,28 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 )
 
-const apiDesignResponsibilities = `- Design clean, RESTful API contracts tailored to this service's domain
+const apiDesignResponsibilities = `- Design the HTTP interface layer (Clean Architecture: interfaces/http)
+- Define DTOs for every HTTP request and response — NOT domain entities
+- Write thin HTTP handlers that decode a DTO, call a use case port interface, and return a DTO
+- Define the router that wires URL patterns to handlers and attaches middleware
+- Reference use case interfaces (e.g. usecase.CreatePaymentUseCase) by name — do not implement them
+- Follow REST best practices: correct HTTP verbs, status codes, and error response envelope
+- Zero domain logic in handlers: validate input → call use case → map result to DTO`
 
-- Define route structures and OpenAPI-style documentation
-- Specify request/response schemas with proper validation rules
-- Handle domain-specific edge cases and error scenarios
-- Follow REST best practices and correct HTTP semantics`
+const apiDesignOutputFormat = `Produce these files (every code block MUST start with // file: <path>):
 
-const apiDesignOutputFormat = `When generating code, always include:
+  internal/interfaces/http/dto/<entity>_dto.go
+      → Request/Response structs with json tags; no domain types embedded
 
-- Route definitions using Go's net/http or chi router
-- Request/Response structs with JSON tags and validation
-- Proper HTTP status codes and error response formats
-- Comments explaining design decisions
+  internal/interfaces/http/handler/<entity>_handler.go
+      → Struct with use case port interface constructor; methods: decode → call use case → encode
 
-Format code blocks as:
-` + "`go\n// file: <filename>\n<code>\n`"
+  internal/interfaces/http/router/router.go
+      → Registers all routes, attaches middleware chain
+
+Format: ` + "```go\n// file: internal/interfaces/http/<subdir>/<filename>.go\n<code>\n```" + `
+
+Do not generate domain entities, repository implementations, or use case logic.`
 
 // APIDesignAgent designs REST API contracts for any microservice
 type APIDesignAgent struct {
@@ -71,7 +77,7 @@ Please produce:
 	artifacts := ParseArtifacts(output)
 	for i, art := range artifacts {
 		if art.Filename == "" && art.Language == "go" {
-			artifacts[i].Filename = fmt.Sprintf("api_%d.go", i+1)
+			artifacts[i].Filename = fmt.Sprintf("internal/interfaces/http/handler/api_%d.go", i+1)
 		}
 	}
 

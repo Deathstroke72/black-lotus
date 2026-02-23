@@ -9,26 +9,34 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 )
 
-const testingResponsibilities = `- Write comprehensive unit tests using Go’s testing package and testify
+const testingResponsibilities = `- Write tests at every CA layer (unit tests mock the layer beneath; integration tests use testcontainers)
+- internal/interfaces/http/middleware: JWT RS256, RBAC per-endpoint, rate limiter (token bucket), request ID, audit logging
+- cmd/server/main.go: dependency wiring — pgx pool → repos → use cases → handlers → router → HTTP server
+- Place test files next to the code they test (e.g. internal/domain/entity/payment_test.go)
+- Use table-driven tests; mock repository interfaces with hand-written or mockery-generated mocks
+- Integration tests use testcontainers-go (PostgreSQL, Kafka as needed)
+- Makefile: test, test-integration, test-race, coverage, lint, build, run targets`
 
-- Design table-driven tests covering edge cases for all domain operations
-- Write integration tests using testcontainers-go for real dependencies
-- Implement JWT authentication middleware with role-based access control
-- Add rate limiting, request ID generation, and audit logging middleware
-- Identify and test security vulnerabilities specific to this service’s domain`
+const testingOutputFormat = `Produce these files (every code block MUST start with // file: <path>):
 
-const testingOutputFormat = `When generating code, always include:
+  internal/interfaces/http/middleware/jwt_middleware.go
+  internal/interfaces/http/middleware/rbac_middleware.go
+  internal/interfaces/http/middleware/rate_limit_middleware.go
+  internal/interfaces/http/middleware/request_id_middleware.go
+  internal/interfaces/http/middleware/audit_middleware.go
 
-- Table-driven unit tests with mock repositories (using interfaces)
-- Integration tests with testcontainers (PostgreSQL, Kafka as needed)
-- Concurrency tests for any operations that modify shared state
-- JWT middleware (RS256), RBAC roles appropriate to this service
-- Rate limiter middleware (token bucket per IP/API key)
-- Audit logging middleware for all mutating operations
-- A Makefile with test targets and coverage reporting
+  cmd/server/main.go
+      → Wire all layers: pgx pool → postgres repos → use cases → handlers → middleware → HTTP server
 
-Format code blocks as:
-` + "`go\n// file: <filename>\n<code>\n`"
+  internal/domain/entity/<entity>_test.go          (unit tests for domain entities)
+  internal/application/usecase/<usecase>_test.go   (unit tests with mock repos)
+  internal/interfaces/http/handler/<handler>_test.go (handler tests with mock use cases)
+  internal/infrastructure/postgres/repository/<repo>_integration_test.go (testcontainers)
+
+  Makefile
+
+Format Go: ` + "```go\n// file: <path>/<filename>.go\n<code>\n```" + `
+Format Makefile: ` + "```makefile\n// file: Makefile\n<content>\n```"
 
 // TestingSecurityAgent writes tests and implements security for any microservice
 type TestingSecurityAgent struct {
@@ -86,8 +94,13 @@ Please produce:
 
 	artifacts := ParseArtifacts(output)
 	for i, art := range artifacts {
-		if art.Filename == "" && art.Language == "go" {
-			artifacts[i].Filename = fmt.Sprintf("test_%d.go", i+1)
+		if art.Filename == "" {
+			switch art.Language {
+			case "go":
+				artifacts[i].Filename = fmt.Sprintf("internal/interfaces/http/middleware/middleware_%d.go", i+1)
+			case "makefile":
+				artifacts[i].Filename = "Makefile"
+			}
 		}
 	}
 

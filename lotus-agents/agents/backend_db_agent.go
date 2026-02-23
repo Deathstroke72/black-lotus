@@ -9,27 +9,43 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 )
 
-const backendResponsibilities = `- Implement service layer business logic for all domain operations
+const backendResponsibilities = `- Implement the domain layer, application layer, and PostgreSQL infrastructure (Clean Architecture)
+- domain/entity: pure Go structs with business invariants; zero external imports (no net/http, no database/sql)
+- domain/repository: interfaces declaring data access contracts (not implementations)
+- domain/service: domain services for business logic spanning multiple entities
+- application/usecase: one file per use case; orchestrates domain via repository interfaces
+- application/port: input port interfaces (what HTTP handlers call)
+- infrastructure/postgres/repository: pgx concrete implementations of domain repository interfaces
+- infrastructure/postgres/migration: SQL up/down migration files
+- Dependency Rule: domain and application layers must never import net/http, database/sql, or any Kafka SDK`
 
-- Design the database schema with proper indexing and constraints
-- Write repository pattern code for data access using pgx or sqlx
-- Handle concurrency: locking strategies, atomic updates, race conditions
-- Implement database migrations (up/down)
-- Apply domain-appropriate patterns (e.g. Saga, outbox, event sourcing)`
+const backendOutputFormat = `Produce these files (every code block MUST start with // file: or -- file:):
 
-const backendOutputFormat = `When generating code, always include:
+  internal/domain/entity/<entity>.go
+      → Pure struct with business invariants; zero external imports
 
-- PostgreSQL schema (tables, indexes, constraints, foreign keys)
-- Repository interfaces and concrete implementations
-- Service structs with dependency injection
-- Concurrency-safe operations where relevant
-- Up/down migration SQL files
+  internal/domain/repository/<entity>_repository.go
+      → Interface only; methods receive/return domain entities
 
-Format Go code blocks as:
-` + "```go\n// file: <filename>\n<code>\n```" + `
+  internal/domain/service/<service>.go
+      → Domain logic spanning multiple entities; zero external imports
 
-Format SQL blocks as:
-` + "`sql\n-- file: <filename>\n<sql>\n`"
+  internal/application/port/input.go
+      → Use case input port interfaces (what handlers call)
+
+  internal/application/usecase/<operation>_usecase.go
+      → One file per use case; depends on domain repository interfaces
+
+  internal/infrastructure/postgres/repository/<entity>_repository.go
+      → Implements domain repository interface using pgx
+
+  internal/infrastructure/postgres/migration/<NNN>_<description>_up.sql
+  internal/infrastructure/postgres/migration/<NNN>_<description>_down.sql
+
+Format Go: ` + "```go\n// file: internal/<layer>/<subdir>/<filename>.go\n<code>\n```" + `
+Format SQL: ` + "```sql\n-- file: internal/infrastructure/postgres/migration/<filename>.sql\n<sql>\n```" + `
+
+The domain and application layers must contain zero external package imports.`
 
 // BackendDBAgent implements service logic and database layer for any microservice
 type BackendDBAgent struct {
@@ -78,9 +94,9 @@ Please produce:
 		if art.Filename == "" {
 			switch art.Language {
 			case "go":
-				artifacts[i].Filename = fmt.Sprintf("service_%d.go", i+1)
+				artifacts[i].Filename = fmt.Sprintf("internal/application/usecase/usecase_%d.go", i+1)
 			case "sql":
-				artifacts[i].Filename = fmt.Sprintf("migration_%d.sql", i+1)
+				artifacts[i].Filename = fmt.Sprintf("internal/infrastructure/postgres/migration/migration_%d.sql", i+1)
 			}
 		}
 	}

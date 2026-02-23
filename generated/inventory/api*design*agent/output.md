@@ -1,706 +1,710 @@
 # API Design Agent Output
 
-# Inventory Microservice API Design
+# Inventory Service REST API Design
 
-## 1. Complete List of API Endpoints
+## API Endpoints Overview
 
 | Method | Path | Description |
 |--------|------|-------------|
-| **Products** |||
-| GET | `/api/v1/products` | List all products with pagination |
 | POST | `/api/v1/products` | Create a new product |
-| GET | `/api/v1/products/{productId}` | Get product details |
-| PUT | `/api/v1/products/{productId}` | Update product information |
-| DELETE | `/api/v1/products/{productId}` | Soft-delete a product |
-| GET | `/api/v1/products/{productId}/variants` | List all variants for a product |
-| POST | `/api/v1/products/{productId}/variants` | Create a product variant |
-| **Warehouses** |||
-| GET | `/api/v1/warehouses` | List all warehouses |
+| GET | `/api/v1/products` | List products with pagination |
+| GET | `/api/v1/products/{productId}` | Get product by ID |
+| PUT | `/api/v1/products/{productId}` | Update product details |
+| DELETE | `/api/v1/products/{productId}` | Soft delete a product |
 | POST | `/api/v1/warehouses` | Create a new warehouse |
-| GET | `/api/v1/warehouses/{warehouseId}` | Get warehouse details |
-| PUT | `/api/v1/warehouses/{warehouseId}` | Update warehouse information |
-| DELETE | `/api/v1/warehouses/{warehouseId}` | Deactivate a warehouse |
-| **Stock Items** |||
-| GET | `/api/v1/stock` | List stock items with filters |
-| GET | `/api/v1/stock/{productId}` | Get aggregated stock across all warehouses |
-| GET | `/api/v1/stock/{productId}/warehouses/{warehouseId}` | Get stock for product in specific warehouse |
-| PUT | `/api/v1/stock/{productId}/warehouses/{warehouseId}` | Set stock level (admin override) |
-| **Stock Operations** |||
-| POST | `/api/v1/stock/reserve` | Reserve stock for an order |
-| POST | `/api/v1/stock/release` | Release reserved stock |
-| POST | `/api/v1/stock/fulfill` | Decrement stock on fulfillment |
-| POST | `/api/v1/stock/replenish` | Replenish stock |
-| POST | `/api/v1/stock/transfer` | Transfer stock between warehouses |
-| **Reservations** |||
-| GET | `/api/v1/reservations` | List reservations with filters |
+| GET | `/api/v1/warehouses` | List all warehouses |
+| GET | `/api/v1/warehouses/{warehouseId}` | Get warehouse by ID |
+| PUT | `/api/v1/warehouses/{warehouseId}` | Update warehouse details |
+| DELETE | `/api/v1/warehouses/{warehouseId}` | Soft delete a warehouse |
+| POST | `/api/v1/stock-items` | Create stock item (product in warehouse) |
+| GET | `/api/v1/stock-items` | List stock items with filters |
+| GET | `/api/v1/stock-items/{stockItemId}` | Get stock item by ID |
+| GET | `/api/v1/products/{productId}/stock` | Get aggregated stock across warehouses |
+| POST | `/api/v1/reservations` | Reserve stock for an order |
 | GET | `/api/v1/reservations/{reservationId}` | Get reservation details |
-| DELETE | `/api/v1/reservations/{reservationId}` | Cancel a reservation |
-| **Stock Movements (Audit)** |||
-| GET | `/api/v1/movements` | List stock movements with filters |
-| GET | `/api/v1/movements/{movementId}` | Get movement details |
-| **Alerts** |||
-| GET | `/api/v1/alerts/low-stock` | Get products below threshold |
-| PUT | `/api/v1/products/{productId}/alert-threshold` | Set low-stock alert threshold |
-| **Health** |||
-| GET | `/health` | Health check endpoint |
-| GET | `/ready` | Readiness probe |
+| POST | `/api/v1/reservations/{reservationId}/release` | Release reserved stock |
+| POST | `/api/v1/reservations/{reservationId}/fulfill` | Fulfill reservation (decrement stock) |
+| GET | `/api/v1/orders/{orderId}/reservations` | Get reservations by order ID |
+| POST | `/api/v1/stock-movements/replenish` | Replenish stock |
+| GET | `/api/v1/stock-movements` | List stock movements (audit trail) |
+| GET | `/api/v1/stock-items/{stockItemId}/movements` | Get movements for specific stock item |
+| GET | `/api/v1/alerts/low-stock` | Get current low-stock alerts |
 
 ---
 
-## 2. Go Structs for Request and Response Payloads
+## DTOs
 
 ```go
-// file: internal/api/types/common.go
-package types
+// file: internal/interfaces/http/dto/error_dto.go
+package dto
 
-import (
-	"time"
+import "time"
+
+// ErrorResponse represents the standardized error response envelope.
+// @Description Standard error response format for all API errors
+type ErrorResponse struct {
+	// Error contains the error details
+	Error ErrorDetail `json:"error"`
+	// RequestID is the unique identifier for request tracing
+	RequestID string `json:"request_id,omitempty"`
+}
+
+// ErrorDetail contains specific error information.
+type ErrorDetail struct {
+	// Code is a machine-readable error code
+	Code string `json:"code"`
+	// Message is a human-readable error description
+	Message string `json:"message"`
+	// Details contains additional error context
+	Details []FieldError `json:"details,omitempty"`
+	// Timestamp is when the error occurred
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// FieldError represents a validation error for a specific field.
+type FieldError struct {
+	// Field is the name of the field that failed validation
+	Field string `json:"field"`
+	// Message describes why validation failed
+	Message string `json:"message"`
+}
+
+// Common error codes
+const (
+	ErrCodeValidation       = "VALIDATION_ERROR"
+	ErrCodeNotFound         = "NOT_FOUND"
+	ErrCodeConflict         = "CONFLICT"
+	ErrCodeInsufficientStock = "INSUFFICIENT_STOCK"
+	ErrCodeInvalidState     = "INVALID_STATE"
+	ErrCodeInternal         = "INTERNAL_ERROR"
+	ErrCodeUnauthorized     = "UNAUTHORIZED"
+	ErrCodeForbidden        = "FORBIDDEN"
 )
+```
 
-// Pagination contains pagination parameters for list requests.
-type Pagination struct {
-	Page     int `json:"page" validate:"min=1"`
+```go
+// file: internal/interfaces/http/dto/pagination_dto.go
+package dto
+
+// PaginationRequest represents pagination parameters for list endpoints.
+type PaginationRequest struct {
+	// Page number (1-indexed)
+	Page int `json:"page" validate:"min=1"`
+	// PageSize is the number of items per page
 	PageSize int `json:"page_size" validate:"min=1,max=100"`
 }
 
-// PaginatedResponse wraps list responses with pagination metadata.
-type PaginatedResponse[T any] struct {
-	Data       []T              `json:"data"`
-	Pagination PaginationMeta   `json:"pagination"`
+// PaginationResponse contains pagination metadata in list responses.
+type PaginationResponse struct {
+	// Page is the current page number
+	Page int `json:"page"`
+	// PageSize is the number of items per page
+	PageSize int `json:"page_size"`
+	// TotalItems is the total number of items across all pages
+	TotalItems int64 `json:"total_items"`
+	// TotalPages is the total number of pages
+	TotalPages int `json:"total_pages"`
+	// HasNext indicates if there are more pages
+	HasNext bool `json:"has_next"`
+	// HasPrev indicates if there are previous pages
+	HasPrev bool `json:"has_prev"`
 }
 
-// PaginationMeta contains pagination metadata in responses.
-type PaginationMeta struct {
-	CurrentPage  int   `json:"current_page"`
-	PageSize     int   `json:"page_size"`
-	TotalItems   int64 `json:"total_items"`
-	TotalPages   int   `json:"total_pages"`
-	HasNext      bool  `json:"has_next"`
-	HasPrevious  bool  `json:"has_previous"`
-}
+// DefaultPage is the default page number
+const DefaultPage = 1
 
-// Timestamp embeds common timestamp fields.
-type Timestamp struct {
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	DeletedAt *time.Time `json:"deleted_at,omitempty"`
-}
+// DefaultPageSize is the default number of items per page
+const DefaultPageSize = 20
 
-// AuditInfo contains audit trail information.
-type AuditInfo struct {
-	PerformedBy   string `json:"performed_by"`
-	PerformedAt   time.Time `json:"performed_at"`
-	CorrelationID string `json:"correlation_id,omitempty"`
-	Source        string `json:"source"` // "api", "kafka", "system"
-}
+// MaxPageSize is the maximum allowed page size
+const MaxPageSize = 100
 ```
 
 ```go
-// file: internal/api/types/products.go
-package types
+// file: internal/interfaces/http/dto/product_dto.go
+package dto
 
-import (
-	"github.com/google/uuid"
-)
+import "time"
 
-// VariantAttribute represents a product variant attribute (e.g., size, color).
-type VariantAttribute struct {
-	Name  string `json:"name" validate:"required,min=1,max=50"`
-	Value string `json:"value" validate:"required,min=1,max=100"`
-}
-
-// Product represents a product in the inventory system.
-type Product struct {
-	ID                 uuid.UUID          `json:"id"`
-	SKU                string             `json:"sku"`
-	Name               string             `json:"name"`
-	Description        string             `json:"description,omitempty"`
-	Category           string             `json:"category,omitempty"`
-	LowStockThreshold  int                `json:"low_stock_threshold"`
-	IsActive           bool               `json:"is_active"`
-	Variants           []ProductVariant   `json:"variants,omitempty"`
-	Timestamp
-}
-
-// ProductVariant represents a specific variant of a product.
+// ProductVariant represents a product variant (size, color combination).
 type ProductVariant struct {
-	ID          uuid.UUID          `json:"id"`
-	ProductID   uuid.UUID          `json:"product_id"`
-	SKU         string             `json:"sku"`
-	Attributes  []VariantAttribute `json:"attributes"`
-	IsActive    bool               `json:"is_active"`
-	Timestamp
+	// Size of the product variant (e.g., "S", "M", "L", "XL")
+	Size string `json:"size,omitempty"`
+	// Color of the product variant (e.g., "Red", "Blue")
+	Color string `json:"color,omitempty"`
+	// SKU is the unique stock keeping unit for this variant
+	SKU string `json:"sku" validate:"required,min=1,max=100"`
 }
 
-// CreateProductRequest is the payload for creating a new product.
-// @Description Request body for creating a new product
+// CreateProductRequest represents the request body for creating a product.
+// @Description Request payload for creating a new product
 type CreateProductRequest struct {
-	// SKU is the unique stock keeping unit identifier
-	SKU string `json:"sku" validate:"required,min=3,max=50,alphanum"`
-	
-	// Name is the human-readable product name
+	// Name is the product display name
 	Name string `json:"name" validate:"required,min=1,max=255"`
-	
-	// Description provides additional product details
+	// Description is the product description
 	Description string `json:"description,omitempty" validate:"max=2000"`
-	
-	// Category for product classification
+	// BaseSKU is the base SKU for the product (variants will extend this)
+	BaseSKU string `json:"base_sku" validate:"required,min=1,max=100"`
+	// Category is the product category
 	Category string `json:"category,omitempty" validate:"max=100"`
-	
-	// LowStockThreshold triggers alerts when stock falls below this level
+	// Variants are the product variants (size, color combinations)
+	Variants []ProductVariant `json:"variants,omitempty" validate:"dive"`
+	// LowStockThreshold is the quantity below which low-stock alerts trigger
 	LowStockThreshold int `json:"low_stock_threshold" validate:"min=0"`
-	
-	// Variants are optional product variants to create with the product
-	Variants []CreateVariantRequest `json:"variants,omitempty" validate:"dive"`
+	// Metadata contains additional product attributes
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
-// UpdateProductRequest is the payload for updating a product.
+// UpdateProductRequest represents the request body for updating a product.
+// @Description Request payload for updating an existing product
 type UpdateProductRequest struct {
-	Name              *string `json:"name,omitempty" validate:"omitempty,min=1,max=255"`
-	Description       *string `json:"description,omitempty" validate:"omitempty,max=2000"`
-	Category          *string `json:"category,omitempty" validate:"omitempty,max=100"`
-	LowStockThreshold *int    `json:"low_stock_threshold,omitempty" validate:"omitempty,min=0"`
-	IsActive          *bool   `json:"is_active,omitempty"`
+	// Name is the product display name
+	Name *string `json:"name,omitempty" validate:"omitempty,min=1,max=255"`
+	// Description is the product description
+	Description *string `json:"description,omitempty" validate:"omitempty,max=2000"`
+	// Category is the product category
+	Category *string `json:"category,omitempty" validate:"omitempty,max=100"`
+	// LowStockThreshold is the quantity below which low-stock alerts trigger
+	LowStockThreshold *int `json:"low_stock_threshold,omitempty" validate:"omitempty,min=0"`
+	// Metadata contains additional product attributes
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
-// CreateVariantRequest is the payload for creating a product variant.
-type CreateVariantRequest struct {
-	SKU        string             `json:"sku" validate:"required,min=3,max=50"`
-	Attributes []VariantAttribute `json:"attributes" validate:"required,min=1,dive"`
-}
-
-// ProductResponse is the API response for a product.
+// ProductResponse represents a product in API responses.
+// @Description Product information returned by the API
 type ProductResponse struct {
-	Product
-	TotalStock      int `json:"total_stock"`
-	AvailableStock  int `json:"available_stock"`
-	ReservedStock   int `json:"reserved_stock"`
+	// ID is the unique product identifier
+	ID string `json:"id"`
+	// Name is the product display name
+	Name string `json:"name"`
+	// Description is the product description
+	Description string `json:"description,omitempty"`
+	// BaseSKU is the base SKU for the product
+	BaseSKU string `json:"base_sku"`
+	// Category is the product category
+	Category string `json:"category,omitempty"`
+	// Variants are the product variants
+	Variants []ProductVariant `json:"variants,omitempty"`
+	// LowStockThreshold is the quantity below which low-stock alerts trigger
+	LowStockThreshold int `json:"low_stock_threshold"`
+	// TotalStock is the aggregated stock across all warehouses
+	TotalStock int `json:"total_stock"`
+	// TotalReserved is the aggregated reserved quantity
+	TotalReserved int `json:"total_reserved"`
+	// AvailableStock is TotalStock minus TotalReserved
+	AvailableStock int `json:"available_stock"`
+	// Metadata contains additional product attributes
+	Metadata map[string]string `json:"metadata,omitempty"`
+	// CreatedAt is when the product was created
+	CreatedAt time.Time `json:"created_at"`
+	// UpdatedAt is when the product was last updated
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// ProductListFilters contains filters for listing products.
-type ProductListFilters struct {
-	Pagination
-	SKU       string `json:"sku,omitempty"`
-	Name      string `json:"name,omitempty"`
-	Category  string `json:"category,omitempty"`
-	IsActive  *bool  `json:"is_active,omitempty"`
-	LowStock  *bool  `json:"low_stock,omitempty"` // Filter for products below threshold
+// ListProductsRequest represents query parameters for listing products.
+type ListProductsRequest struct {
+	PaginationRequest
+	// Category filters by product category
+	Category string `json:"category,omitempty"`
+	// Search performs a text search on name and description
+	Search string `json:"search,omitempty"`
+	// LowStockOnly returns only products with low stock
+	LowStockOnly bool `json:"low_stock_only,omitempty"`
+}
+
+// ListProductsResponse represents the response for listing products.
+// @Description Paginated list of products
+type ListProductsResponse struct {
+	// Products is the list of products
+	Products []ProductResponse `json:"products"`
+	// Pagination contains pagination metadata
+	Pagination PaginationResponse `json:"pagination"`
 }
 ```
 
 ```go
-// file: internal/api/types/warehouses.go
-package types
+// file: internal/interfaces/http/dto/warehouse_dto.go
+package dto
 
-import (
-	"github.com/google/uuid"
-)
+import "time"
 
-// Warehouse represents a storage location.
-type Warehouse struct {
-	ID        uuid.UUID `json:"id"`
-	Code      string    `json:"code"`
-	Name      string    `json:"name"`
-	Address   Address   `json:"address"`
-	IsActive  bool      `json:"is_active"`
-	Priority  int       `json:"priority"` // Lower number = higher priority for allocation
-	Timestamp
-}
-
-// Address represents a physical address.
-type Address struct {
-	Street     string `json:"street" validate:"required,max=255"`
-	City       string `json:"city" validate:"required,max=100"`
-	State      string `json:"state" validate:"required,max=100"`
+// WarehouseAddress represents a warehouse physical address.
+type WarehouseAddress struct {
+	// Street is the street address
+	Street string `json:"street" validate:"required,max=255"`
+	// City is the city name
+	City string `json:"city" validate:"required,max=100"`
+	// State is the state or province
+	State string `json:"state,omitempty" validate:"max=100"`
+	// PostalCode is the postal or ZIP code
 	PostalCode string `json:"postal_code" validate:"required,max=20"`
-	Country    string `json:"country" validate:"required,iso3166_1_alpha2"`
+	// Country is the ISO 3166-1 alpha-2 country code
+	Country string `json:"country" validate:"required,len=2"`
 }
 
-// CreateWarehouseRequest is the payload for creating a warehouse.
+// CreateWarehouseRequest represents the request body for creating a warehouse.
+// @Description Request payload for creating a new warehouse
 type CreateWarehouseRequest struct {
-	Code     string  `json:"code" validate:"required,min=2,max=20,alphanum"`
-	Name     string  `json:"name" validate:"required,min=1,max=255"`
-	Address  Address `json:"address" validate:"required"`
-	Priority int     `json:"priority" validate:"min=1,max=100"`
+	// Name is the warehouse display name
+	Name string `json:"name" validate:"required,min=1,max=255"`
+	// Code is a unique warehouse code (e.g., "WH-NYC-01")
+	Code string `json:"code" validate:"required,min=1,max=50"`
+	// Address is the warehouse physical address
+	Address WarehouseAddress `json:"address" validate:"required"`
+	// IsActive indicates if the warehouse is operational
+	IsActive bool `json:"is_active"`
+	// Priority is used for stock allocation (lower = higher priority)
+	Priority int `json:"priority" validate:"min=0"`
 }
 
-// UpdateWarehouseRequest is the payload for updating a warehouse.
+// UpdateWarehouseRequest represents the request body for updating a warehouse.
+// @Description Request payload for updating an existing warehouse
 type UpdateWarehouseRequest struct {
-	Name     *string  `json:"name,omitempty" validate:"omitempty,min=1,max=255"`
-	Address  *Address `json:"address,omitempty"`
-	IsActive *bool    `json:"is_active,omitempty"`
-	Priority *int     `json:"priority,omitempty" validate:"omitempty,min=1,max=100"`
+	// Name is the warehouse display name
+	Name *string `json:"name,omitempty" validate:"omitempty,min=1,max=255"`
+	// Address is the warehouse physical address
+	Address *WarehouseAddress `json:"address,omitempty"`
+	// IsActive indicates if the warehouse is operational
+	IsActive *bool `json:"is_active,omitempty"`
+	// Priority is used for stock allocation
+	Priority *int `json:"priority,omitempty" validate:"omitempty,min=0"`
 }
 
-// WarehouseResponse includes warehouse with stock summary.
+// WarehouseResponse represents a warehouse in API responses.
+// @Description Warehouse information returned by the API
 type WarehouseResponse struct {
-	Warehouse
-	TotalProducts  int `json:"total_products"`
-	TotalStock     int `json:"total_stock"`
-	ReservedStock  int `json:"reserved_stock"`
+	// ID is the unique warehouse identifier
+	ID string `json:"id"`
+	// Name is the warehouse display name
+	Name string `json:"name"`
+	// Code is the unique warehouse code
+	Code string `json:"code"`
+	// Address is the warehouse physical address
+	Address WarehouseAddress `json:"address"`
+	// IsActive indicates if the warehouse is operational
+	IsActive bool `json:"is_active"`
+	// Priority is used for stock allocation
+	Priority int `json:"priority"`
+	// TotalProducts is the count of distinct products in this warehouse
+	TotalProducts int `json:"total_products"`
+	// CreatedAt is when the warehouse was created
+	CreatedAt time.Time `json:"created_at"`
+	// UpdatedAt is when the warehouse was last updated
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// ListWarehousesRequest represents query parameters for listing warehouses.
+type ListWarehousesRequest struct {
+	PaginationRequest
+	// ActiveOnly returns only active warehouses
+	ActiveOnly bool `json:"active_only,omitempty"`
+}
+
+// ListWarehousesResponse represents the response for listing warehouses.
+// @Description List of warehouses
+type ListWarehousesResponse struct {
+	// Warehouses is the list of warehouses
+	Warehouses []WarehouseResponse `json:"warehouses"`
+	// Pagination contains pagination metadata
+	Pagination PaginationResponse `json:"pagination"`
 }
 ```
 
 ```go
-// file: internal/api/types/stock.go
-package types
+// file: internal/interfaces/http/dto/stock_item_dto.go
+package dto
 
-import (
-	"time"
+import "time"
 
-	"github.com/google/uuid"
-)
-
-// StockItem represents inventory level for a product/variant in a warehouse.
-type StockItem struct {
-	ID           uuid.UUID  `json:"id"`
-	ProductID    uuid.UUID  `json:"product_id"`
-	VariantID    *uuid.UUID `json:"variant_id,omitempty"`
-	WarehouseID  uuid.UUID  `json:"warehouse_id"`
-	Quantity     int        `json:"quantity"`      // Total physical stock
-	Reserved     int        `json:"reserved"`      // Reserved for orders
-	Available    int        `json:"available"`     // quantity - reserved
-	Version      int        `json:"version"`       // Optimistic locking
-	LastCountAt  *time.Time `json:"last_count_at,omitempty"`
-	Timestamp
+// CreateStockItemRequest represents the request body for creating a stock item.
+// @Description Request payload for creating a stock item (product in warehouse)
+type CreateStockItemRequest struct {
+	// ProductID is the ID of the product
+	ProductID string `json:"product_id" validate:"required,uuid"`
+	// WarehouseID is the ID of the warehouse
+	WarehouseID string `json:"warehouse_id" validate:"required,uuid"`
+	// VariantSKU is the SKU of the specific variant (optional)
+	VariantSKU string `json:"variant_sku,omitempty" validate:"max=100"`
+	// Quantity is the initial stock quantity
+	Quantity int `json:"quantity" validate:"min=0"`
+	// ReorderPoint is the quantity at which to trigger reorder
+	ReorderPoint int `json:"reorder_point" validate:"min=0"`
+	// ReorderQuantity is the quantity to order when reordering
+	ReorderQuantity int `json:"reorder_quantity" validate:"min=0"`
+	// BinLocation is the physical location within the warehouse
+	BinLocation string `json:"bin_location,omitempty" validate:"max=100"`
 }
 
-// AggregatedStock represents stock levels across all warehouses.
-type AggregatedStock struct {
-	ProductID       uuid.UUID             `json:"product_id"`
-	VariantID       *uuid.UUID            `json:"variant_id,omitempty"`
-	TotalQuantity   int                   `json:"total_quantity"`
-	TotalReserved   int                   `json:"total_reserved"`
-	TotalAvailable  int                   `json:"total_available"`
-	ByWarehouse     []WarehouseStockLevel `json:"by_warehouse"`
-	IsLowStock      bool                  `json:"is_low_stock"`
-	Threshold       int                   `json:"threshold"`
+// StockItemResponse represents a stock item in API responses.
+// @Description Stock item information returned by the API
+type StockItemResponse struct {
+	// ID is the unique stock item identifier
+	ID string `json:"id"`
+	// ProductID is the ID of the product
+	ProductID string `json:"product_id"`
+	// ProductName is the name of the product
+	ProductName string `json:"product_name"`
+	// WarehouseID is the ID of the warehouse
+	WarehouseID string `json:"warehouse_id"`
+	// WarehouseName is the name of the warehouse
+	WarehouseName string `json:"warehouse_name"`
+	// VariantSKU is the SKU of the specific variant
+	VariantSKU string `json:"variant_sku,omitempty"`
+	// Quantity is the current stock quantity
+	Quantity int `json:"quantity"`
+	// ReservedQuantity is the quantity currently reserved
+	ReservedQuantity int `json:"reserved_quantity"`
+	// AvailableQuantity is Quantity minus ReservedQuantity
+	AvailableQuantity int `json:"available_quantity"`
+	// ReorderPoint is the quantity at which to trigger reorder
+	ReorderPoint int `json:"reorder_point"`
+	// ReorderQuantity is the quantity to order when reordering
+	ReorderQuantity int `json:"reorder_quantity"`
+	// BinLocation is the physical location within the warehouse
+	BinLocation string `json:"bin_location,omitempty"`
+	// IsLowStock indicates if current quantity is below threshold
+	IsLowStock bool `json:"is_low_stock"`
+	// CreatedAt is when the stock item was created
+	CreatedAt time.Time `json:"created_at"`
+	// UpdatedAt is when the stock item was last updated
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// WarehouseStockLevel represents stock in a specific warehouse.
-type WarehouseStockLevel struct {
-	WarehouseID   uuid.UUID `json:"warehouse_id"`
-	WarehouseCode string    `json:"warehouse_code"`
-	WarehouseName string    `json:"warehouse_name"`
-	Quantity      int       `json:"quantity"`
-	Reserved      int       `json:"reserved"`
-	Available     int       `json:"available"`
+// ListStockItemsRequest represents query parameters for listing stock items.
+type ListStockItemsRequest struct {
+	PaginationRequest
+	// ProductID filters by product
+	ProductID string `json:"product_id,omitempty" validate:"omitempty,uuid"`
+	// WarehouseID filters by warehouse
+	WarehouseID string `json:"warehouse_id,omitempty" validate:"omitempty,uuid"`
+	// VariantSKU filters by variant SKU
+	VariantSKU string `json:"variant_sku,omitempty"`
+	// LowStockOnly returns only items with low stock
+	LowStockOnly bool `json:"low_stock_only,omitempty"`
 }
 
-// StockListFilters contains filters for listing stock.
-type StockListFilters struct {
-	Pagination
-	ProductID   *uuid.UUID `json:"product_id,omitempty"`
-	VariantID   *uuid.UUID `json:"variant_id,omitempty"`
-	WarehouseID *uuid.UUID `json:"warehouse_id,omitempty"`
-	LowStock    *bool      `json:"low_stock,omitempty"`
-	MinQuantity *int       `json:"min_quantity,omitempty"`
-	MaxQuantity *int       `json:"max_quantity,omitempty"`
+// ListStockItemsResponse represents the response for listing stock items.
+// @Description Paginated list of stock items
+type ListStockItemsResponse struct {
+	// StockItems is the list of stock items
+	StockItems []StockItemResponse `json:"stock_items"`
+	// Pagination contains pagination metadata
+	Pagination PaginationResponse `json:"pagination"`
 }
 
-// SetStockRequest is used to directly set stock level (admin operation).
-type SetStockRequest struct {
-	Quantity int       `json:"quantity" validate:"min=0"`
-	Reason   string    `json:"reason" validate:"required,min=5,max=500"`
-	AuditInfo
-}
-```
-
-```go
-// file: internal/api/types/stock_operations.go
-package types
-
-import (
-	"github.com/google/uuid"
-)
-
-// StockReservationItem represents a single line item in a reservation request.
-type StockReservationItem struct {
-	ProductID   uuid.UUID  `json:"product_id" validate:"required"`
-	VariantID   *uuid.UUID `json:"variant_id,omitempty"`
-	Quantity    int        `json:"quantity" validate:"required,min=1"`
-	WarehouseID *uuid.UUID `json:"warehouse_id,omitempty"` // Optional: system allocates if not specified
+// AggregatedStockResponse represents aggregated stock across warehouses.
+// @Description Aggregated stock information for a product
+type AggregatedStockResponse struct {
+	// ProductID is the product identifier
+	ProductID string `json:"product_id"`
+	// ProductName is the product name
+	ProductName string `json:"product_name"`
+	// TotalQuantity is the total stock across all warehouses
+	TotalQuantity int `json:"total_quantity"`
+	// TotalReserved is the total reserved quantity
+	TotalReserved int `json:"total_reserved"`
+	// TotalAvailable is TotalQuantity minus TotalReserved
+	TotalAvailable int `json:"total_available"`
+	// IsLowStock indicates if total stock is below threshold
+	IsLowStock bool `json:"is_low_stock"`
+	// WarehouseBreakdown shows stock per warehouse
+	WarehouseBreakdown []WarehouseStockBreakdown `json:"warehouse_breakdown"`
+	// VariantBreakdown shows stock per variant
+	VariantBreakdown []VariantStockBreakdown `json:"variant_breakdown,omitempty"`
 }
 
-// ReserveStockRequest is the payload for reserving stock.
-// @Description Reserve stock for an order. Supports multiple items and automatic warehouse allocation.
-type ReserveStockRequest struct {
-	// OrderID is the unique identifier of the order requesting stock
-	OrderID string `json:"order_id" validate:"required,min=1,max=100"`
-	
-	// Items to reserve
-	Items []StockReservationItem `json:"items" validate:"required,min=1,dive"`
-	
-	// ExpiresInMinutes sets reservation expiry (default: 30 minutes)
-	ExpiresInMinutes int `json:"expires_in_minutes,omitempty" validate:"omitempty,min=1,max=1440"`
-	
-	// AllocationStrategy determines how stock is allocated across warehouses
-	// Options: "single" (one warehouse), "distributed" (minimize shipping)
-	AllocationStrategy string `json:"allocation_strategy,omitempty" validate:"omitempty,oneof=single distributed"`
-	
-	AuditInfo
+// WarehouseStockBreakdown shows stock for a specific warehouse.
+type WarehouseStockBreakdown struct {
+	// WarehouseID is the warehouse identifier
+	WarehouseID string `json:"warehouse_id"`
+	// WarehouseName is the warehouse name
+	WarehouseName string `json:"warehouse_name"`
+	// Quantity is the stock in this warehouse
+	Quantity int `json:"quantity"`
+	// Reserved is the reserved quantity in this warehouse
+	Reserved int `json:"reserved"`
+	// Available is the available quantity
+	Available int `json:"available"`
 }
 
-// ReserveStockResponse contains the result of a reservation request.
-type ReserveStockResponse struct {
-	ReservationID string                    `json:"reservation_id"`
-	OrderID       string                    `json:"order_id"`
-	Status        string                    `json:"status"` // "confirmed", "partial", "failed"
-	Items         []ReservationItemResult   `json:"items"`
-	ExpiresAt     string                    `json:"expires_at"`
-}
-
-// ReservationItemResult contains the result for a single reservation item.
-type ReservationItemResult struct {
-	ProductID       uuid.UUID              `json:"product_id"`
-	VariantID       *uuid.UUID             `json:"variant_id,omitempty"`
-	RequestedQty    int                    `json:"requested_quantity"`
-	ReservedQty     int                    `json:"reserved_quantity"`
-	Status          string                 `json:"status"` // "reserved", "partial", "insufficient"
-	Allocations     []WarehouseAllocation  `json:"allocations"`
-	ShortageAmount  int                    `json:"shortage_amount,omitempty"`
-}
-
-// WarehouseAllocation represents stock allocated from a specific warehouse.
-type WarehouseAllocation struct {
-	WarehouseID   uuid.UUID `json:"warehouse_id"`
-	WarehouseCode string    `json:"warehouse_code"`
-	Quantity      int       `json:"quantity"`
-}
-
-// ReleaseStockRequest is the payload for releasing reserved stock.
-type ReleaseStockRequest struct {
-	// ReservationID to release (mutually exclusive with OrderID)
-	ReservationID string `json:"reservation_id,omitempty" validate:"required_without=OrderID"`
-	
-	// OrderID to release all reservations for an order
-	OrderID string `json:"order_id,omitempty" validate:"required_without=ReservationID"`
-	
-	// Items to partially release (optional - releases all if not specified)
-	Items []ReleaseItem `json:"items,omitempty" validate:"omitempty,dive"`
-	
-	// Reason for releasing the stock
-	Reason string `json:"reason" validate:"required,min=5,max=500"`
-	
-	AuditInfo
-}
-
-// ReleaseItem specifies quantity to release for a specific product.
-type ReleaseItem struct {
-	ProductID uuid.UUID  `json:"product_id" validate:"required"`
-	VariantID *uuid.UUID `json:"variant_id,omitempty"`
-	Quantity  int        `json:"quantity" validate:"required,min=1"`
-}
-
-// ReleaseStockResponse contains the result of a release operation.
-type ReleaseStockResponse struct {
-	ReservationID    string `json:"reservation_id"`
-	ReleasedItems    int    `json:"released_items"`
-	ReleasedQuantity int    `json:"released_quantity"`
-	Status           string `json:"status"` // "released", "partial", "not_found"
-}
-
-// FulfillStockRequest decrements stock when an order is shipped.
-type FulfillStockRequest struct {
-	// ReservationID of the reservation to fulfill
-	ReservationID string `json:"reservation_id" validate:"required"`
-	
-	// OrderID for correlation
-	OrderID string `json:"order_id" validate:"required"`
-	
-	// Items to fulfill (optional - fulfills all reserved items if not specified)
-	Items []FulfillItem `json:"items,omitempty" validate:"omitempty,dive"`
-	
-	// ShipmentID for tracking
-	ShipmentID string `json:"shipment_id,omitempty"`
-	
-	AuditInfo
-}
-
-// FulfillItem specifies quantity to fulfill for a specific product.
-type FulfillItem struct {
-	ProductID   uuid.UUID  `json:"product_id" validate:"required"`
-	VariantID   *uuid.UUID `json:"variant_id,omitempty"`
-	WarehouseID uuid.UUID  `json:"warehouse_id" validate:"required"`
-	Quantity    int        `json:"quantity" validate:"required,min=1"`
-}
-
-// FulfillStockResponse contains the result of a fulfillment operation.
-type FulfillStockResponse struct {
-	ReservationID     string `json:"reservation_id"`
-	OrderID           string `json:"order_id"`
-	FulfilledItems    int    `json:"fulfilled_items"`
-	FulfilledQuantity int    `json:"fulfilled_quantity"`
-	Status            string `json:"status"` // "fulfilled", "partial"
-}
-
-// ReplenishStockRequest adds stock to a warehouse.
-type ReplenishStockRequest struct {
-	ProductID    uuid.UUID  `json:"product_id" validate:"required"`
-	VariantID    *uuid.UUID `json:"variant_id,omitempty"`
-	WarehouseID  uuid.UUID  `json:"warehouse_id" validate:"required"`
-	Quantity     int        `json:"quantity" validate:"required,min=1"`
-	
-	// Reference to external system (e.g., purchase order)
-	ReferenceType string `json:"reference_type,omitempty" validate:"omitempty,oneof=purchase_order return adjustment"`
-	ReferenceID   string `json:"reference_id,omitempty"`
-	
-	// BatchInfo for tracking lot/batch numbers
-	BatchNumber   string `json:"batch_number,omitempty"`
-	ExpiryDate    string `json:"expiry_date,omitempty" validate:"omitempty,datetime=2006-01-02"`
-	
-	AuditInfo
-}
-
-// ReplenishStockResponse contains the result of replenishment.
-type ReplenishStockResponse struct {
-	StockItem
-	PreviousQuantity int    `json:"previous_quantity"`
-	AddedQuantity    int    `json:"added_quantity"`
-	MovementID       string `json:"movement_id"`
-}
-
-// TransferStockRequest moves stock between warehouses.
-type TransferStockRequest struct {
-	ProductID         uuid.UUID  `json:"product_id" validate:"required"`
-	VariantID         *uuid.UUID `json:"variant_id,omitempty"`
-	SourceWarehouseID uuid.UUID  `json:"source_warehouse_id" validate:"required"`
-	TargetWarehouseID uuid.UUID  `json:"target_warehouse_id" validate:"required,nefield=SourceWarehouseID"`
-	Quantity          int        `json:"quantity" validate:"required,min=1"`
-	
-	// Reference for tracking
-	TransferReference string `json:"transfer_reference,omitempty"`
-	
-	AuditInfo
-}
-
-// TransferStockResponse contains the result of a transfer.
-type TransferStockResponse struct {
-	TransferID          string    `json:"transfer_id"`
-	ProductID           uuid.UUID `json:"product_id"`
-	SourceWarehouseID   uuid.UUID `json:"source_warehouse_id"`
-	TargetWarehouseID   uuid.UUID `json:"target_warehouse_id"`
-	Quantity            int       `json:"quantity"`
-	SourceNewQuantity   int       `json:"source_new_quantity"`
-	TargetNewQuantity   int       `json:"target_new_quantity"`
-	MovementIDs         []string  `json:"movement_ids"`
+// VariantStockBreakdown shows stock for a specific variant.
+type VariantStockBreakdown struct {
+	// VariantSKU is the variant SKU
+	VariantSKU string `json:"variant_sku"`
+	// Size is the variant size
+	Size string `json:"size,omitempty"`
+	// Color is the variant color
+	Color string `json:"color,omitempty"`
+	// Quantity is the total stock for this variant
+	Quantity int `json:"quantity"`
+	// Reserved is the reserved quantity for this variant
+	Reserved int `json:"reserved"`
+	// Available is the available quantity
+	Available int `json:"available"`
 }
 ```
 
 ```go
-// file: internal/api/types/reservations.go
-package types
+// file: internal/interfaces/http/dto/reservation_dto.go
+package dto
 
-import (
-	"time"
+import "time"
 
-	"github.com/google/uuid"
-)
-
-// ReservationStatus represents the state of a reservation.
-type ReservationStatus string
-
-const (
-	ReservationStatusPending   ReservationStatus = "pending"
-	ReservationStatusConfirmed ReservationStatus = "confirmed"
-	ReservationStatusPartial   ReservationStatus = "partial"
-	ReservationStatusFulfilled ReservationStatus = "fulfilled"
-	ReservationStatusReleased  ReservationStatus = "released"
-	ReservationStatusExpired   ReservationStatus = "expired"
-)
-
-// Reservation represents a stock reservation for an order.
-type Reservation struct {
-	ID        uuid.UUID         `json:"id"`
-	OrderID   string            `json:"order_id"`
-	Status    ReservationStatus `json:"status"`
-	Items     []ReservationItem `json:"items"`
-	ExpiresAt time.Time         `json:"expires_at"`
-	Timestamp
-	AuditInfo
-}
-
-// ReservationItem represents a single item in a reservation.
+// ReservationItem represents a single item in a reservation request.
 type ReservationItem struct {
-	ID          uuid.UUID             `json:"id"`
-	ProductID   uuid.UUID             `json:"product_id"`
-	VariantID   *uuid.UUID            `json:"variant_id,omitempty"`
-	Quantity    int                   `json:"quantity"`
-	Allocations []WarehouseAllocation `json:"allocations"`
-	Status      string                `json:"status"`
+	// ProductID is the product to reserve
+	ProductID string `json:"product_id" validate:"required,uuid"`
+	// VariantSKU is the specific variant SKU (optional)
+	VariantSKU string `json:"variant_sku,omitempty" validate:"max=100"`
+	// Quantity is the amount to reserve
+	Quantity int `json:"quantity" validate:"required,min=1"`
+	// PreferredWarehouseID is the preferred warehouse (optional)
+	PreferredWarehouseID string `json:"preferred_warehouse_id,omitempty" validate:"omitempty,uuid"`
 }
 
-// ReservationListFilters contains filters for listing reservations.
-type ReservationListFilters struct {
-	Pagination
-	OrderID     string             `json:"order_id,omitempty"`
-	ProductID   *uuid.UUID         `json:"product_id,omitempty"`
-	WarehouseID *uuid.UUID         `json:"warehouse_id,omitempty"`
-	Status      *ReservationStatus `json:"status,omitempty"`
-	ExpiringIn  *int               `json:"expiring_in_minutes,omitempty"` // Filter reservations expiring within N minutes
-	CreatedFrom *time.Time         `json:"created_from,omitempty"`
-	CreatedTo   *time.Time         `json:"created_to,omitempty"`
+// CreateReservationRequest represents the request body for creating a reservation.
+// @Description Request payload for reserving stock for an order
+type CreateReservationRequest struct {
+	// OrderID is the external order identifier
+	OrderID string `json:"order_id" validate:"required,min=1,max=100"`
+	// Items are the products and quantities to reserve
+	Items []ReservationItem `json:"items" validate:"required,min=1,dive"`
+	// ExpiresAt is when the reservation should expire (optional)
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// Metadata contains additional reservation context
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
-```
 
-```go
-// file: internal/api/types/movements.go
-package types
+// ReservationItemResponse represents a reserved item in the response.
+type ReservationItemResponse struct {
+	// ProductID is the reserved product
+	ProductID string `json:"product_id"`
+	// ProductName is the product name
+	ProductName string `json:"product_name"`
+	// VariantSKU is the variant SKU
+	VariantSKU string `json:"variant_sku,omitempty"`
+	// Quantity is the reserved amount
+	Quantity int `json:"quantity"`
+	// WarehouseID is where the stock is reserved
+	WarehouseID string `json:"warehouse_id"`
+	// WarehouseName is the warehouse name
+	WarehouseName string `json:"warehouse_name"`
+	// StockItemID is the specific stock item
+	StockItemID string `json:"stock_item_id"`
+}
 
-import (
-	"time"
+// ReservationResponse represents a reservation in API responses.
+// @Description Reservation information returned by the API
+type ReservationResponse struct {
+	// ID is the unique reservation identifier
+	ID string `json:"id"`
+	// OrderID is the external order identifier
+	OrderID string `json:"order_id"`
+	// Status is the reservation status (pending, confirmed, released, fulfilled, expired)
+	Status string `json:"status"`
+	// Items are the reserved items
+	Items []ReservationItemResponse `json:"items"`
+	// ExpiresAt is when the reservation expires
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// Metadata contains additional reservation context
+	Metadata map[string]string `json:"metadata,omitempty"`
+	// CreatedAt is when the reservation was created
+	CreatedAt time.Time `json:"created_at"`
+	// UpdatedAt is when the reservation was last updated
+	UpdatedAt time.Time `json:"updated_at"`
+}
 
-	"github.com/google/uuid"
-)
+// ReleaseReservationRequest represents the request body for releasing a reservation.
+// @Description Request payload for releasing reserved stock
+type ReleaseReservationRequest struct {
+	// Reason is the reason for releasing (e.g., "order_cancelled", "timeout")
+	Reason string `json:"reason" validate:"required,min=1,max=255"`
+	// PartialItems allows releasing only specific items (optional)
+	PartialItems []PartialReleaseItem `json:"partial_items,omitempty" validate:"omitempty,dive"`
+}
 
-// MovementType represents the type of stock movement.
-type MovementType string
+// PartialReleaseItem specifies partial release of a reservation item.
+type PartialReleaseItem struct {
+	// ProductID is the product to partially release
+	ProductID string `json:"product_id" validate:"required,uuid"`
+	// VariantSKU is the variant SKU
+	VariantSKU string `json:"variant_sku,omitempty"`
+	// Quantity is the amount to release
+	Quantity int `json:"quantity" validate:"required,min=1"`
+}
 
+// FulfillReservationRequest represents the request body for fulfilling a reservation.
+// @Description Request payload for fulfilling a reservation (decrementing stock)
+type FulfillReservationRequest struct {
+	// ShipmentID is the external shipment identifier (optional)
+	ShipmentID string `json:"shipment_id,omitempty" validate:"max=100"`
+	// FulfilledBy is the user or system that fulfilled the reservation
+	FulfilledBy string `json:"fulfilled_by" validate:"required,max=255"`
+	// Notes contains any fulfillment notes
+	Notes string `json:"notes,omitempty" validate:"max=1000"`
+}
+
+// ListReservationsRequest represents query parameters for listing reservations.
+type ListReservationsRequest struct {
+	PaginationRequest
+	// OrderID filters by order
+	OrderID string `json:"order_id,omitempty"`
+	// Status filters by reservation status
+	Status string `json:"status,omitempty"`
+	// ProductID filters by product
+	ProductID string `json:"product_id,omitempty" validate:"omitempty,uuid"`
+}
+
+// ListReservationsResponse represents the response for listing reservations.
+// @Description Paginated list of reservations
+type ListReservationsResponse struct {
+	// Reservations is the list of reservations
+	Reservations []ReservationResponse `json:"reservations"`
+	// Pagination contains pagination metadata
+	Pagination PaginationResponse `json:"pagination"`
+}
+
+// Reservation status constants
 const (
-	MovementTypeReserve    MovementType = "reserve"
-	MovementTypeRelease    MovementType = "release"
-	MovementTypeFulfill    MovementType = "fulfill"
-	MovementTypeReplenish  MovementType = "replenish"
-	MovementTypeTransferIn MovementType = "transfer_in"
-	MovementTypeTransferOut MovementType = "transfer_out"
-	MovementTypeAdjustment MovementType = "adjustment"
-	MovementTypeCount      MovementType = "count"
+	ReservationStatusPending   = "pending"
+	ReservationStatusConfirmed = "confirmed"
+	ReservationStatusReleased  = "released"
+	ReservationStatusFulfilled = "fulfilled"
+	ReservationStatusExpired   = "expired"
 )
-
-// StockMovement represents an auditable stock change event.
-type StockMovement struct {
-	ID              uuid.UUID    `json:"id"`
-	ProductID       uuid.UUID    `json:"product_id"`
-	VariantID       *uuid.UUID   `json:"variant_id,omitempty"`
-	WarehouseID     uuid.UUID    `json:"warehouse_id"`
-	MovementType    MovementType `json:"movement_type"`
-	Quantity        int          `json:"quantity"`        // Positive for additions, negative for removals
-	PreviousQty     int          `json:"previous_quantity"`
-	NewQty          int          `json:"new_quantity"`
-	PreviousReserved int         `json:"previous_reserved"`
-	NewReserved     int          `json:"new_reserved"`
-	
-	// Reference fields for correlation
-	ReservationID   *uuid.UUID `json:"reservation_id,omitempty"`
-	OrderID         *string    `json:"order_id,omitempty"`
-	TransferID      *uuid.UUID `json:"transfer_id,omitempty"`
-	ReferenceType   *string    `json:"reference_type,omitempty"`
-	ReferenceID     *string    `json:"reference_id,omitempty"`
-	
-	Reason          string     `json:"reason,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-	AuditInfo
-}
-
-// MovementListFilters contains filters for listing movements.
-type MovementListFilters struct {
-	Pagination
-	ProductID     *uuid.UUID    `json:"product_id,omitempty"`
-	VariantID     *uuid.UUID    `json:"variant_id,omitempty"`
-	WarehouseID   *uuid.UUID    `json:"warehouse_id,omitempty"`
-	MovementType  *MovementType `json:"movement_type,omitempty"`
-	OrderID       *string       `json:"order_id,omitempty"`
-	ReservationID *uuid.UUID    `json:"reservation_id,omitempty"`
-	PerformedBy   *string       `json:"performed_by,omitempty"`
-	DateFrom      *time.Time    `json:"date_from,omitempty"`
-	DateTo        *time.Time    `json:"date_to,omitempty"`
-}
-
-// MovementSummary provides aggregated movement statistics.
-type MovementSummary struct {
-	ProductID       uuid.UUID                  `json:"product_id"`
-	WarehouseID     *uuid.UUID                 `json:"warehouse_id,omitempty"`
-	Period          string                     `json:"period"` // "day", "week", "month"
-	TotalIn         int                        `json:"total_in"`
-	TotalOut        int                        `json:"total_out"`
-	NetChange       int                        `json:"net_change"`
-	ByType          map[MovementType]int       `json:"by_type"`
-}
 ```
 
 ```go
-// file: internal/api/types/alerts.go
-package types
+// file: internal/interfaces/http/dto/stock_movement_dto.go
+package dto
 
-import (
-	"time"
+import "time"
 
-	"github.com/google/uuid"
-)
-
-// LowStockAlert represents a product that is below its threshold.
-type LowStockAlert struct {
-	ProductID         uuid.UUID  `json:"product_id"`
-	ProductSKU        string     `json:"product_sku"`
-	ProductName       string     `json:"product_name"`
-	VariantID         *uuid.UUID `json:"variant_id,omitempty"`
-	VariantSKU        *string    `json:"variant_sku,omitempty"`
-	Threshold         int        `json:"threshold"`
-	CurrentStock      int        `json:"current_stock"`
-	AvailableStock    int        `json:"available_stock"`
-	ShortageAmount    int        `json:"shortage_amount"`
-	ByWarehouse       []WarehouseStockLevel `json:"by_warehouse"`
-	LastReplenishedAt *time.Time `json:"last_replenished_at,omitempty"`
-	AlertTriggeredAt  time.Time  `json:"alert_triggered_at"`
+// ReplenishStockRequest represents the request body for replenishing stock.
+// @Description Request payload for replenishing stock in a warehouse
+type ReplenishStockRequest struct {
+	// StockItemID is the stock item to replenish
+	StockItemID string `json:"stock_item_id" validate:"required,uuid"`
+	// Quantity is the amount to add
+	Quantity int `json:"quantity" validate:"required,min=1"`
+	// ReferenceType is the type of reference (e.g., "purchase_order", "transfer", "adjustment")
+	ReferenceType string `json:"reference_type" validate:"required,oneof=purchase_order transfer adjustment return"`
+	// ReferenceID is the external reference identifier
+	ReferenceID string `json:"reference_id" validate:"required,min=1,max=100"`
+	// UnitCost is the cost per unit (optional)
+	UnitCost *float64 `json:"unit_cost,omitempty" validate:"omitempty,min=0"`
+	// Notes contains any additional notes
+	Notes string `json:"notes,omitempty" validate:"max=1000"`
+	// PerformedBy is the user who performed the replenishment
+	PerformedBy string `json:"performed_by" validate:"required,max=255"`
 }
 
-// LowStockAlertFilters contains filters for low stock alerts.
-type LowStockAlertFilters struct {
-	Pagination
-	Category     string     `json:"category,omitempty"`
-	WarehouseID  *uuid.UUID `json:"warehouse_id,omitempty"`
-	MinShortage  *int       `json:"min_shortage,omitempty"`
-	SortBy       string     `json:"sort_by,omitempty" validate:"omitempty,oneof=shortage_amount current_stock product_name"`
-	SortOrder    string     `json:"sort_order,omitempty" validate:"omitempty,oneof=asc desc"`
+// StockMovementResponse represents a stock movement in API responses.
+// @Description Stock movement information for audit trail
+type StockMovementResponse struct {
+	// ID is the unique movement identifier
+	ID string `json:"id"`
+	// StockItemID is the affected stock item
+	StockItemID string `json:"stock_item_id"`
+	// ProductID is the product identifier
+	ProductID string `json:"product_id"`
+	// ProductName is the product name
+	ProductName string `json:"product_name"`
+	// WarehouseID is the warehouse identifier
+	WarehouseID string `json:"warehouse_id"`
+	// WarehouseName is the warehouse name
+	WarehouseName string `json:"warehouse_name"`
+	// VariantSKU is the variant SKU
+	VariantSKU string `json:"variant_sku,omitempty"`
+	// MovementType is the type of movement
+	MovementType string `json:"movement_type"`
+	// Quantity is the quantity changed (positive for in, negative for out)
+	Quantity int `json:"quantity"`
+	// QuantityBefore is the quantity before the movement
+	QuantityBefore int `json:"quantity_before"`
+	// QuantityAfter is the quantity after the movement
+	QuantityAfter int `json:"quantity_after"`
+	// ReferenceType is the type of reference
+	ReferenceType string `json:"reference_type"`
+	// ReferenceID is the external reference identifier
+	ReferenceID string `json:"reference_id"`
+	// UnitCost is the cost per unit
+	UnitCost *float64 `json:"unit_cost,omitempty"`
+	// Notes contains additional notes
+	Notes string `json:"notes,omitempty"`
+	// PerformedBy is who performed the movement
+	PerformedBy string `json:"performed_by"`
+	// CreatedAt is when the movement occurred
+	CreatedAt time.Time `json:"created_at"`
 }
 
-// SetAlertThresholdRequest updates the low-stock threshold for a product.
-type SetAlertThresholdRequest struct {
-	Threshold int    `json:"threshold" validate:"min=0"`
-	Reason    string `json:"reason,omitempty"`
-	AuditInfo
+// ListStockMovementsRequest represents query parameters for listing movements.
+type ListStockMovementsRequest struct {
+	PaginationRequest
+	// StockItemID filters by stock item
+	StockItemID string `json:"stock_item_id,omitempty" validate:"omitempty,uuid"`
+	// ProductID filters by product
+	ProductID string `json:"product_id,omitempty" validate:"omitempty,uuid"`
+	// WarehouseID filters by warehouse
+	WarehouseID string `json:"warehouse_id,omitempty" validate:"omitempty,uuid"`
+	// MovementType filters by movement type
+	MovementType string `json:"movement_type,omitempty"`
+	// ReferenceType filters by reference type
+	ReferenceType string `json:"reference_type,omitempty"`
+	// ReferenceID filters by reference ID
+	ReferenceID string `json:"reference_id,omitempty"`
+	// StartDate filters movements from this date
+	StartDate *time.Time `json:"start_date,omitempty"`
+	// EndDate filters movements until this date
+	EndDate *time.Time `json:"end_date,omitempty"`
 }
-```
 
-```go
-// file: internal/api/types/errors.go
-package types
+// ListStockMovementsResponse represents the response for listing movements.
+// @Description Paginated list of stock movements (audit trail)
+type ListStockMovementsResponse struct {
+	// Movements is the list of stock movements
+	Movements []StockMovementResponse `json:"movements"`
+	// Pagination contains pagination metadata
+	Pagination PaginationResponse `json:"pagination"`
+}
 
-import (
-	"time"
-)
-
-// ErrorCode represents application-specific error codes.
-type ErrorCode string
-
+// Movement type constants
 const (
-	// General errors
-	ErrCodeBadRequest          ErrorCode = "BAD_REQUEST"
-	ErrCodeValidation          ErrorCode = "VALIDATION_ERROR"
-	ErrCodeNotFound            ErrorCode = "NOT_FOUND"
-	ErrCodeConflict            ErrorCode = "CONFLICT"
-	ErrCodeInternalError       ErrorCode = "INTERNAL_ERROR"
-	ErrCodeServiceUnavailable  ErrorCode = "SERVICE_UNAVAILABLE"
-	
-	// Domain-specific errors
-	ErrCodeInsufficientStock   ErrorCode = "INSUFFICIENT_STOCK"
-	ErrCodeReservationExpired  ErrorCode = "RESERVATION_EXPIRED"
-	ErrCodeReservationNotFound ErrorCode = "RESERVATION_NOT_FOUND"
-	ErrCodeProductInactive     ErrorCode = "PRODUCT_INACTIVE"
-	ErrCodeWarehouseInactive   ErrorCode = "WAREHOUSE_INACTIVE"
-	ErrCodeDuplicateSKU        ErrorCode = "DUPLICATE_SKU"
-	ErrCodeStockNegative       ErrorCode = "STOCK_CANNOT_BE_NEGATIVE"
-	ErrCodeOptimisticLock      ErrorCode = "CONCURRENT_MODIFICATION"
-	ErrCodeTransferSameWarehouse ErrorCode = "TRANSFER_SAME_WAREHOUSE"
+	MovementTypeReplenish   = "replenish"
+	MovementTypeReserve     = "reserve"
+	MovementTypeRelease     = "release"
+	MovementTypeFulfill     = "fulfill"
+	MovementTypeAdjustment  = "adjustment"
+	MovementTypeTransferIn  = "transfer_in"
+	MovementTypeTransferOut = "transfer_out"
 )
+```
 
-// ErrorResponse is the standard error response format.
-// @Description Standard error response format for all API errors
-type ErrorResponse struct {
-	// Error contains the primary error information
-	Error ErrorDetail `json:"error"`
-}
+```go
+// file: internal/interfaces/http/dto/alert_dto.go
+package dto
 
-// ErrorDetail contains detailed error information.
-type ErrorDetail struct {
-	// Code is the application-specific error
+import "time"
+
+// LowStockAlertResponse represents a low stock alert.
+// @Description Low stock alert information
+type LowStockAlertResponse struct {
+	// ID is the unique alert identifier
+	ID string `json:"id"`
+	// StockItemID is the affected stock item
+	StockItemID string `json:"stock_item_id"`
+	// ProductID is the product identifier
+	ProductID string `json:"product_id"`
+	// ProductName is the product name
+	ProductName string `json:"product_name"`
+	// WarehouseID is the warehouse identifier
+	WarehouseID string `json:"warehouse_id"`
+	// WarehouseName is the warehouse name
+	WarehouseName string `json:"warehouse_name"`
+	// VariantSKU is the variant SKU
+	VariantSKU string `json:"variant_sku,omitempty"`
+	// CurrentQuantity is the current stock level
+	CurrentQuantity int `json:"current_quantity"`
+	// Threshold is the low stock threshold
+	Threshold int `json:"threshold"`
+	// ReorderPoint

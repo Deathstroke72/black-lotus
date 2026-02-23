@@ -149,12 +149,12 @@ type AgentResult struct {
 
 ### Agent Responsibilities & Default Filenames
 
-| Agent                    | Produces                                                          | Default filename (no hint)              |
-|--------------------------|-------------------------------------------------------------------|-----------------------------------------|
-| API Design Agent         | Router setup, request/response structs, OpenAPI godoc             | `api_<n>.go`                            |
-| Backend & Database Agent | PostgreSQL schema, pgx repositories, service layer, migrations    | `service_<n>.go` / `migration_<n>.sql`  |
-| Messaging & Events Agent | Kafka producers (outbox pattern), consumers, dead-letter handling | `messaging_<n>.go`                      |
-| Testing & Security Agent | Unit/integration tests, JWT (RS256), RBAC, rate limiter, Makefile | `test_<n>.go`                           |
+| Agent                    | CA Layers Produced                                                                   | Default fallback (no hint)                                          |
+|--------------------------|--------------------------------------------------------------------------------------|---------------------------------------------------------------------|
+| API Design Agent         | `internal/interfaces/http/` (handlers, DTOs, router)                                 | `internal/interfaces/http/handler/api_<n>.go`                       |
+| Backend & Database Agent | `internal/domain/`, `internal/application/`, `internal/infrastructure/postgres/`    | `internal/application/usecase/usecase_<n>.go` / `internal/infrastructure/postgres/migration/migration_<n>.sql` |
+| Messaging & Events Agent | `internal/domain/event/`, `internal/application/usecase/`, `internal/infrastructure/kafka/` | `internal/infrastructure/kafka/producer/messaging_<n>.go`    |
+| Testing & Security Agent | `internal/interfaces/http/middleware/`, tests per layer, `cmd/server/main.go`, `Makefile` | `internal/interfaces/http/middleware/middleware_<n>.go`         |
 
 ### Pipeline (`lotus-agents/orchestrator/pipeline.go`)
 
@@ -170,7 +170,7 @@ type PipelineResult struct {
 }
 ```
 
-`SaveArtifacts(result, outputDir)` writes all artifacts under `<outputDir>/<service-name>/<agent-name>/`, plus a top-level `README.md` summary.
+`SaveArtifacts(result, outputDir)` writes code artifacts into a unified Clean Architecture tree at `<outputDir>/<service-name>/`, and writes per-agent `output.md` transparency logs under `<outputDir>/<service-name>/<agent-name>/output.md`.
 
 #### `sanitizeName` behaviour
 
@@ -250,26 +250,54 @@ gofmt -l -w .
 
 ## Output Structure
 
+Each run produces a unified Clean Architecture tree under `generated/<service-name>/`.
+Per-agent transparency logs (`output.md`) are preserved in their own subdirectories.
+
 ```
 generated/
 └── <service-name>/
-    ├── README.md                                  # Pipeline summary (description, duration, file list)
+    ├── README.md                                  # Pipeline summary with CA file listing
     ├── api*design*agent/
-    │   ├── output.md                              # Full agent markdown output
-    │   └── api_1.go, api_2.go, ...
+    │   └── output.md                              # Full API Design Agent markdown output
     ├── backend*and*database*agent/
-    │   ├── output.md
-    │   ├── service_1.go, ...
-    │   └── migration_1.sql, ...
+    │   └── output.md                              # Full Backend Agent markdown output
     ├── messaging*and*events*agent/
-    │   ├── output.md
-    │   └── messaging_1.go, ...
-    └── testing*and*security*agent/
-        ├── output.md
-        └── test_1.go, ...
+    │   └── output.md                              # Full Messaging Agent markdown output
+    ├── testing*and*security*agent/
+    │   └── output.md                              # Full Testing Agent markdown output
+    │
+    ├── cmd/
+    │   └── server/
+    │       └── main.go                            # Entry point, dependency wiring (Testing Agent)
+    │
+    ├── internal/
+    │   ├── domain/
+    │   │   ├── entity/                            # Pure business objects (Backend Agent)
+    │   │   ├── repository/                        # Repository interfaces (Backend Agent)
+    │   │   ├── service/                           # Pure domain services (Backend Agent)
+    │   │   └── event/                             # Domain event structs (Messaging Agent)
+    │   ├── application/
+    │   │   ├── usecase/                           # Use cases (Backend + Messaging agents)
+    │   │   └── port/                              # Input/output port interfaces (Backend Agent)
+    │   ├── infrastructure/
+    │   │   ├── postgres/
+    │   │   │   ├── repository/                    # pgx implementations (Backend Agent)
+    │   │   │   └── migration/                     # SQL files (Backend Agent)
+    │   │   └── kafka/
+    │   │       ├── producer/                      # Outbox publisher (Messaging Agent)
+    │   │       └── consumer/                      # Consumer groups (Messaging Agent)
+    │   └── interfaces/
+    │       └── http/
+    │           ├── dto/                           # Request/Response types (API Design Agent)
+    │           ├── handler/                       # HTTP handlers (API Design Agent)
+    │           ├── middleware/                    # JWT, RBAC, rate limiting (Testing Agent)
+    │           └── router/                        # Route setup (API Design Agent)
+    │
+    └── Makefile                                   # Build, test, coverage targets (Testing Agent)
 ```
 
 > Agent directory names are lowercased with spaces replaced by `*` (see `sanitizeName` in `pipeline.go`).
+> Code artifacts land directly in the CA tree, not inside agent subdirectories.
 
 ## Adding a New Agent
 

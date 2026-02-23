@@ -34,7 +34,7 @@ func main() {
 	// ---------------------------------------------------------------
 	svc := config.InventoryService()
 
-	outputDir := "./generated"
+	outputDir := "../generated"
 	if len(os.Args) > 1 {
 		outputDir = os.Args[1]
 	}
