@@ -77,9 +77,9 @@ func (s *ServiceDefinition) Prompt() string {
 // InventoryService returns a ServiceDefinition for an e-commerce inventory microservice
 func InventoryService() *ServiceDefinition {
 	return &ServiceDefinition{
-		Name:        "inventory",
+		Name:        "inventory-java",
 		Description: "Tracks product stock levels across multiple warehouses for an e-commerce platform. Handles reservations, replenishment, and low-stock alerting.",
-		Language:    "Go",
+		Language:    "Spring Boot",
 		Entities:    []string{"Product", "StockItem", "Warehouse", "StockMovement", "Reservation"},
 		Operations: []string{
 			"Reserve stock for an order",

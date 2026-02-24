@@ -163,6 +163,10 @@ func extensionForLang(lang string) string {
 		ext = ".yaml"
 	case "json":
 		ext = ".json"
+	case "java":
+		ext = ".java"
+	case "springboot":
+		ext = ".java"
 	default:
 		ext = ".txt"
 	}
